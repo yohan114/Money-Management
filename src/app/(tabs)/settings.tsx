@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,17 +7,22 @@ import {
   Pressable,
   Alert,
   Modal,
+  TextInput,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { COLORS, RADIUS, SPACING, CURRENCIES } from '../../constants/theme';
 import { useFinancial } from '../../context/FinancialContext';
 import { Card } from '../../components/Card';
 import { CurrencyConfig } from '../../types';
+import { ExportService } from '../../services/export';
 
 export default function SettingsScreen() {
   const {
     accounts,
+    categories,
     settings,
     updateSettings,
     resetDemoData,
@@ -29,6 +34,20 @@ export default function SettingsScreen() {
   } = useFinancial();
 
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
+  const [currencySearchQuery, setCurrencySearchQuery] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  // Filter currencies by search query
+  const filteredCurrencies = useMemo(() => {
+    const q = currencySearchQuery.toLowerCase().trim();
+    if (!q) return CURRENCIES;
+    return CURRENCIES.filter(
+      (c) =>
+        c.code.toLowerCase().includes(q) ||
+        c.name.toLowerCase().includes(q) ||
+        c.symbol.toLowerCase().includes(q)
+    );
+  }, [currencySearchQuery]);
 
   const handleSelectCurrency = (curr: CurrencyConfig) => {
     updateSettings({
@@ -36,12 +55,75 @@ export default function SettingsScreen() {
       currencySymbol: curr.symbol,
     });
     setCurrencyModalVisible(false);
+    setCurrencySearchQuery('');
+  };
+
+  const handleToggleBiometrics = async (value: boolean) => {
+    if (value) {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (!hasHardware || !isEnrolled) {
+        Alert.alert(
+          'Biometrics Unavailable',
+          'Biometric hardware or enrollment (Fingerprint / Face ID) is not set up on this device.'
+        );
+        return;
+      }
+
+      const auth = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Authenticate to enable biometric protection',
+        fallbackLabel: 'Use Device Passcode',
+      });
+
+      if (auth.success) {
+        await updateSettings({ biometricLock: true });
+        Alert.alert('Protection Enabled', 'App is now secured with biometric authentication.');
+      }
+    } else {
+      await updateSettings({ biometricLock: false });
+    }
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      setExporting(true);
+      await ExportService.exportTransactionsToCSV(
+        transactions,
+        categories,
+        accounts,
+        settings.currency
+      );
+    } catch {
+      Alert.alert('Export Failed', 'An error occurred while exporting your CSV records.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportJSON = async () => {
+    try {
+      setExporting(true);
+      await ExportService.exportJSONBackup({
+        transactions,
+        categories,
+        accounts,
+        budgets,
+        recurringItems,
+        settings,
+        exportedAt: new Date().toISOString(),
+      });
+    } catch {
+      Alert.alert('Export Failed', 'An error occurred while creating your JSON backup.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleResetDemo = () => {
     Alert.alert(
       'Load Demo Data',
-      'This will populate your app with sample transactions, budgets, and bills for easy testing. Proceed?',
+      'This will populate your app with sample transactions, budgets, and bills in LKR (Rs.) for easy testing. Proceed?',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Load Demo Data', onPress: () => resetDemoData() },
@@ -138,6 +220,27 @@ export default function SettingsScreen() {
 
             <View style={styles.menuDivider} />
 
+            {/* Biometric Lock Toggle */}
+            <View style={styles.menuItem}>
+              <View style={styles.menuLeft}>
+                <View style={[styles.menuIconWrap, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+                  <Ionicons name="finger-print-outline" size={18} color={COLORS.purple} />
+                </View>
+                <View>
+                  <Text style={styles.menuTitle}>Biometric Lock</Text>
+                  <Text style={styles.menuSubtitle}>Fingerprint / Face ID protection</Text>
+                </View>
+              </View>
+              <Switch
+                value={settings.biometricLock}
+                onValueChange={handleToggleBiometrics}
+                trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                thumbColor="#FFF"
+              />
+            </View>
+
+            <View style={styles.menuDivider} />
+
             {/* Offline Storage Info */}
             <View style={styles.menuItem}>
               <View style={styles.menuLeft}>
@@ -151,6 +254,50 @@ export default function SettingsScreen() {
               </View>
               <Ionicons name="lock-closed" size={16} color={COLORS.income} />
             </View>
+          </Card>
+        </View>
+
+        {/* Export Data Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Reports & Exports</Text>
+          <Card style={styles.menuCard}>
+            <Pressable
+              style={styles.menuItem}
+              onPress={handleExportCSV}
+              disabled={exporting}
+              accessibilityRole="button"
+            >
+              <View style={styles.menuLeft}>
+                <View style={[styles.menuIconWrap, { backgroundColor: COLORS.primaryGlow }]}>
+                  <Ionicons name="document-text-outline" size={18} color={COLORS.primaryLight} />
+                </View>
+                <View>
+                  <Text style={styles.menuTitle}>Export to CSV (Excel)</Text>
+                  <Text style={styles.menuSubtitle}>Share via WhatsApp, Email, or Drive</Text>
+                </View>
+              </View>
+              <Ionicons name="share-outline" size={18} color={COLORS.primaryLight} />
+            </Pressable>
+
+            <View style={styles.menuDivider} />
+
+            <Pressable
+              style={styles.menuItem}
+              onPress={handleExportJSON}
+              disabled={exporting}
+              accessibilityRole="button"
+            >
+              <View style={styles.menuLeft}>
+                <View style={[styles.menuIconWrap, { backgroundColor: 'rgba(6, 182, 212, 0.15)' }]}>
+                  <Ionicons name="cloud-download-outline" size={18} color={COLORS.info} />
+                </View>
+                <View>
+                  <Text style={styles.menuTitle}>Full JSON Backup</Text>
+                  <Text style={styles.menuSubtitle}>Complete portable database dump</Text>
+                </View>
+              </View>
+              <Ionicons name="download-outline" size={18} color={COLORS.info} />
+            </Pressable>
           </Card>
         </View>
 
@@ -186,7 +333,7 @@ export default function SettingsScreen() {
                 </View>
                 <View>
                   <Text style={styles.menuTitle}>Load Sample Demo Data</Text>
-                  <Text style={styles.menuSubtitle}>Test the app with realistic data</Text>
+                  <Text style={styles.menuSubtitle}>Restore rich sample data in LKR (Rs.)</Text>
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
@@ -213,35 +360,62 @@ export default function SettingsScreen() {
 
         {/* Footer Note */}
         <View style={styles.footerInfo}>
-          <Text style={styles.versionText}>Money Management App v1.0.0</Text>
+          <Text style={styles.versionText}>Money Management App v1.1.0</Text>
           <Text style={styles.subVersionText}>Offline-First • Cross-Platform Mobile</Text>
         </View>
       </ScrollView>
 
-      {/* Currency Selection Modal */}
+      {/* Currency Selection Modal with Instant Search */}
       <Modal
         visible={currencyModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setCurrencyModalVisible(false)}
+        onRequestClose={() => {
+          setCurrencyModalVisible(false);
+          setCurrencySearchQuery('');
+        }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setCurrencyModalVisible(false)}
+          onPress={() => {
+            setCurrencyModalVisible(false);
+            setCurrencySearchQuery('');
+          }}
         >
-          <View style={styles.modalContent}>
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Choose Currency</Text>
               <Pressable
-                onPress={() => setCurrencyModalVisible(false)}
+                onPress={() => {
+                  setCurrencyModalVisible(false);
+                  setCurrencySearchQuery('');
+                }}
                 hitSlop={10}
               >
                 <Ionicons name="close" size={20} color={COLORS.textSecondary} />
               </Pressable>
             </View>
 
-            <ScrollView style={{ maxHeight: 380 }}>
-              {CURRENCIES.map((curr) => {
+            {/* Currency Search Input */}
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={18} color={COLORS.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search currency, country, or code..."
+                placeholderTextColor={COLORS.textMuted}
+                value={currencySearchQuery}
+                onChangeText={setCurrencySearchQuery}
+                autoCorrect={false}
+              />
+              {currencySearchQuery.length > 0 && (
+                <Pressable onPress={() => setCurrencySearchQuery('')}>
+                  <Ionicons name="close-circle" size={16} color={COLORS.textMuted} />
+                </Pressable>
+              )}
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }} keyboardShouldPersistTaps="handled">
+              {filteredCurrencies.map((curr) => {
                 const isSelected = settings.currency === curr.code;
                 return (
                   <Pressable
@@ -271,6 +445,13 @@ export default function SettingsScreen() {
                   </Pressable>
                 );
               })}
+              {filteredCurrencies.length === 0 && (
+                <View style={{ padding: SPACING.lg, alignItems: 'center' }}>
+                  <Text style={{ color: COLORS.textMuted, fontSize: 13 }}>
+                    No currencies matching "{currencySearchQuery}"
+                  </Text>
+                </View>
+              )}
             </ScrollView>
           </View>
         </Pressable>
@@ -362,6 +543,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
+    flex: 1,
   },
   menuIconWrap: {
     width: 36,
@@ -454,6 +636,24 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: 18,
     fontWeight: '700',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: SPACING.md,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: COLORS.textPrimary,
+    fontSize: 13,
+    padding: 0,
   },
   currencyItem: {
     flexDirection: 'row',

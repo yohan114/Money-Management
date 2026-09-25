@@ -9,10 +9,12 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 import { useFinancial } from '../../context/FinancialContext';
 import { TransactionType } from '../../types';
@@ -27,6 +29,7 @@ export default function TransactionModal() {
   const [type, setType] = useState<TransactionType>(initialType);
   const [amountStr, setAmountStr] = useState('');
   const [note, setNote] = useState('');
+  const [imageUri, setImageUri] = useState<string | null>(null);
 
   // Available categories for selected type
   const typeCategories = categories.filter((c) => c.type === type);
@@ -49,6 +52,42 @@ export default function TransactionModal() {
   const handleAddPreset = (val: number) => {
     const current = parseFloat(amountStr) || 0;
     setAmountStr((current + val).toString());
+  };
+
+  const handlePickReceipt = async () => {
+    Alert.alert('Attach Receipt', 'Choose a source for your receipt photo:', [
+      {
+        text: 'Camera',
+        onPress: async () => {
+          const perm = await ImagePicker.requestCameraPermissionsAsync();
+          if (!perm.granted) {
+            Alert.alert('Permission Denied', 'Camera permission is required.');
+            return;
+          }
+          const res = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            quality: 0.7,
+          });
+          if (!res.canceled && res.assets && res.assets.length > 0) {
+            setImageUri(res.assets[0].uri);
+          }
+        },
+      },
+      {
+        text: 'Photo Library',
+        onPress: async () => {
+          const res = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            quality: 0.7,
+          });
+          if (!res.canceled && res.assets && res.assets.length > 0) {
+            setImageUri(res.assets[0].uri);
+          }
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const handleSubmit = async () => {
@@ -75,6 +114,7 @@ export default function TransactionModal() {
       accountId: selectedAccountId,
       date: new Date().toISOString(),
       note: note.trim() || undefined,
+      imageUri: imageUri || undefined,
     });
 
     router.back();
@@ -163,13 +203,13 @@ export default function TransactionModal() {
 
           {/* Quick Amount Chips */}
           <View style={styles.chipsRow}>
-            {[10, 25, 50, 100].map((preset) => (
+            {[100, 500, 1000, 5000].map((preset) => (
               <Pressable
                 key={preset}
                 style={styles.chip}
                 onPress={() => handleAddPreset(preset)}
               >
-                <Text style={styles.chipText}>+{preset}</Text>
+                <Text style={styles.chipText}>+{preset.toLocaleString()}</Text>
               </Pressable>
             ))}
             <Pressable style={styles.chip} onPress={() => setAmountStr('')}>
@@ -263,11 +303,37 @@ export default function TransactionModal() {
           <Text style={styles.fieldLabel}>Note / Description</Text>
           <TextInput
             style={styles.noteInput}
-            placeholder="Add memo (e.g. Dinner with friends)..."
+            placeholder="Add memo (e.g. Supermarket shopping)..."
             placeholderTextColor={COLORS.textMuted}
             value={note}
             onChangeText={setNote}
           />
+
+          {/* Receipt Attachment Section */}
+          <Text style={styles.fieldLabel}>Receipt Photo (Optional)</Text>
+          {imageUri ? (
+            <View style={styles.receiptPreviewContainer}>
+              <Image source={{ uri: imageUri }} style={styles.receiptPreview} />
+              <Pressable
+                style={styles.removeReceiptBtn}
+                onPress={() => setImageUri(null)}
+                accessibilityLabel="Remove photo"
+              >
+                <Ionicons name="trash" size={16} color="#FFF" />
+                <Text style={styles.removeReceiptText}>Remove</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              style={styles.attachReceiptBtn}
+              onPress={handlePickReceipt}
+              accessibilityRole="button"
+              accessibilityLabel="Attach Receipt Photo"
+            >
+              <Ionicons name="camera-outline" size={20} color={COLORS.primaryLight} />
+              <Text style={styles.attachReceiptText}>Take Photo or Upload Receipt</Text>
+            </Pressable>
+          )}
 
           {/* Submit Button */}
           <Pressable
@@ -353,13 +419,13 @@ const styles = StyleSheet.create({
   },
   currencySymbol: {
     color: COLORS.textPrimary,
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
     marginRight: 6,
   },
   amountInput: {
     color: COLORS.textPrimary,
-    fontSize: 48,
+    fontSize: 44,
     fontWeight: '800',
     minWidth: 120,
     textAlign: 'center',
@@ -448,6 +514,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  attachReceiptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.card,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+  },
+  attachReceiptText: {
+    color: COLORS.primaryLight,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  receiptPreviewContainer: {
+    position: 'relative',
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  receiptPreview: {
+    width: '100%',
+    height: 180,
+    resizeMode: 'cover',
+  },
+  removeReceiptBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: RADIUS.sm,
+  },
+  removeReceiptText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
   submitBtn: {
     alignItems: 'center',

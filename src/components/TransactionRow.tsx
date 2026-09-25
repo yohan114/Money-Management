@@ -83,6 +83,12 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
           <Text style={styles.categoryBadge}>{category?.name || 'General'}</Text>
           <Text style={styles.metaDot}>•</Text>
           <Text style={styles.accountName}>{account?.name || 'Account'}</Text>
+          {transaction.imageUri && (
+            <>
+              <Text style={styles.metaDot}>•</Text>
+              <Ionicons name="receipt-outline" size={13} color={COLORS.primaryLight} />
+            </>
+          )}
         </View>
       </View>
 

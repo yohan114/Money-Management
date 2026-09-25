@@ -56,16 +56,43 @@ export const RADIUS = {
 };
 
 export const CURRENCIES: CurrencyConfig[] = [
+  { code: 'LKR', symbol: 'Rs.', name: 'Sri Lankan Rupee' },
   { code: 'USD', symbol: '$', name: 'US Dollar' },
-  { code: 'LKR', symbol: 'Rs', name: 'Sri Lankan Rupee' },
   { code: 'EUR', symbol: '€', name: 'Euro' },
   { code: 'GBP', symbol: '£', name: 'British Pound' },
   { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
+  { code: 'AED', symbol: 'AED', name: 'UAE Dirham' },
+  { code: 'SAR', symbol: 'SAR', name: 'Saudi Riyal' },
+  { code: 'QAR', symbol: 'QAR', name: 'Qatari Riyal' },
+  { code: 'KWD', symbol: 'KD', name: 'Kuwaiti Dinar' },
+  { code: 'BHD', symbol: 'BD', name: 'Bahraini Dinar' },
+  { code: 'OMR', symbol: 'OMR', name: 'Omani Rial' },
   { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
   { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' },
-  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
   { code: 'SGD', symbol: 'S$', name: 'Singapore Dollar' },
-  { code: 'AED', symbol: 'AED', name: 'UAE Dirham' },
+  { code: 'MYR', symbol: 'RM', name: 'Malaysian Ringgit' },
+  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
+  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
+  { code: 'HKD', symbol: 'HK$', name: 'Hong Kong Dollar' },
+  { code: 'KRW', symbol: '₩', name: 'South Korean Won' },
+  { code: 'CHF', symbol: 'CHF', name: 'Swiss Franc' },
+  { code: 'NZD', symbol: 'NZ$', name: 'New Zealand Dollar' },
+  { code: 'THB', symbol: '฿', name: 'Thai Baht' },
+  { code: 'IDR', symbol: 'Rp', name: 'Indonesian Rupiah' },
+  { code: 'PHP', symbol: '₱', name: 'Philippine Peso' },
+  { code: 'VND', symbol: '₫', name: 'Vietnamese Dong' },
+  { code: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
+  { code: 'MXN', symbol: 'Mex$', name: 'Mexican Peso' },
+  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
+  { code: 'SEK', symbol: 'kr', name: 'Swedish Krona' },
+  { code: 'NOK', symbol: 'kr', name: 'Norwegian Krone' },
+  { code: 'DKK', symbol: 'kr', name: 'Danish Krone' },
+  { code: 'TRY', symbol: '₺', name: 'Turkish Lira' },
+  { code: 'EGP', symbol: 'E£', name: 'Egyptian Pound' },
+  { code: 'PKR', symbol: 'PKR', name: 'Pakistani Rupee' },
+  { code: 'BDT', symbol: '৳', name: 'Bangladeshi Taka' },
+  { code: 'NGN', symbol: '₦', name: 'Nigerian Naira' },
+  { code: 'KES', symbol: 'KSh', name: 'Kenyan Shilling' },
 ];
 
 export const DEFAULT_CATEGORIES: Category[] = [
@@ -92,8 +119,8 @@ export const DEFAULT_CATEGORIES: Category[] = [
 ];
 
 export const DEFAULT_ACCOUNTS: Account[] = [
-  { id: 'acc-cash', name: 'Cash Wallet', type: 'cash', balance: 450, icon: 'wallet', color: '#10B981' },
-  { id: 'acc-main-bank', name: 'Main Checking Account', type: 'bank', balance: 3820, icon: 'business', color: '#3B82F6' },
-  { id: 'acc-credit-card', name: 'Credit Card', type: 'card', balance: -350, icon: 'card', color: '#EC4899' },
-  { id: 'acc-savings', name: 'Emergency Fund', type: 'savings', balance: 8500, icon: 'shield-checkmark', color: '#8B5CF6' },
+  { id: 'acc-cash', name: 'Cash Wallet', type: 'cash', balance: 35000, icon: 'wallet', color: '#10B981' },
+  { id: 'acc-main-bank', name: 'Commercial Bank Account', type: 'bank', balance: 285000, icon: 'business', color: '#3B82F6' },
+  { id: 'acc-credit-card', name: 'Mastercard / Credit Card', type: 'card', balance: -24500, icon: 'card', color: '#EC4899' },
+  { id: 'acc-savings', name: 'High-Yield Savings / Fixed', type: 'savings', balance: 750000, icon: 'shield-checkmark', color: '#8B5CF6' },
 ];

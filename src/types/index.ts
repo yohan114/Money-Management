@@ -30,6 +30,7 @@ export interface Transaction {
   date: string; // ISO 8601 string: YYYY-MM-DDTHH:mm:ss.sssZ
   note?: string;
   recurringId?: string;
+  imageUri?: string; // Receipt or bill photo
 }
 
 export interface Budget {
