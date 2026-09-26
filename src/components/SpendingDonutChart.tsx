@@ -28,7 +28,25 @@ export const SpendingDonutChart: React.FC<SpendingDonutChartProps> = ({
   const circumference = 2 * Math.PI * radius;
   const center = size / 2;
 
-  let accumulatedPercent = 0;
+  const slicesWithAngles = React.useMemo(() => {
+    return data.slice(0, 6).reduce<
+      (DonutSlice & { angleOffset: number; strokeDashoffset: number })[]
+    >((accArray, slice) => {
+      const lastSlice = accArray[accArray.length - 1];
+      const prevAngle = lastSlice
+        ? lastSlice.angleOffset + (lastSlice.percentage / 100) * 360
+        : 0;
+      const strokeDashoffset = circumference - (circumference * slice.percentage) / 100;
+      return [
+        ...accArray,
+        {
+          ...slice,
+          angleOffset: prevAngle,
+          strokeDashoffset,
+        },
+      ];
+    }, []);
+  }, [data, circumference]);
 
   if (totalExpense === 0 || data.length === 0) {
     return (
@@ -64,11 +82,7 @@ export const SpendingDonutChart: React.FC<SpendingDonutChartProps> = ({
             fill="none"
           />
           <G rotation="-90" origin={`${center}, ${center}`}>
-            {data.slice(0, 6).map((slice, index) => {
-              const strokeDashoffset = circumference - (circumference * slice.percentage) / 100;
-              const angleOffset = (accumulatedPercent / 100) * 360;
-              accumulatedPercent += slice.percentage;
-
+            {slicesWithAngles.map((slice, index) => {
               return (
                 <Circle
                   key={slice.category.id || index}
@@ -78,10 +92,10 @@ export const SpendingDonutChart: React.FC<SpendingDonutChartProps> = ({
                   stroke={slice.category.color}
                   strokeWidth={strokeWidth}
                   strokeDasharray={`${circumference} ${circumference}`}
-                  strokeDashoffset={strokeDashoffset}
+                  strokeDashoffset={slice.strokeDashoffset}
                   strokeLinecap="round"
                   fill="none"
-                  transform={`rotate(${angleOffset} ${center} ${center})`}
+                  transform={`rotate(${slice.angleOffset} ${center} ${center})`}
                 />
               );
             })}

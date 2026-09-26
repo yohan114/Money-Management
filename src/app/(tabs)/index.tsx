@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  FlatList,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,12 +15,29 @@ import { useFinancial } from '../../context/FinancialContext';
 import { Card } from '../../components/Card';
 import { TransactionRow } from '../../components/TransactionRow';
 import { BillReminderCard } from '../../components/BillReminderCard';
-import { TransactionType } from '../../types';
+import { TransactionType, AssetClass } from '../../types';
+
+const ASSET_CLASS_META: Record<
+  AssetClass,
+  { label: string; icon: string; color: string }
+> = {
+  stock: { label: 'Stock', icon: 'trending-up', color: '#10B981' },
+  etf: { label: 'ETF', icon: 'pie-chart', color: '#3B82F6' },
+  crypto: { label: 'Crypto', icon: 'logo-bitcoin', color: '#F59E0B' },
+  real_estate: { label: 'Real Estate', icon: 'home', color: '#8B5CF6' },
+  commodity: { label: 'Commodity', icon: 'diamond', color: '#EC4899' },
+  other: { label: 'Asset', icon: 'cube', color: '#06B6D4' },
+};
 
 export default function DashboardScreen() {
   const router = useRouter();
   const {
     totalNetWorth,
+    totalAssets,
+    totalLiabilities,
+    debtToAssetRatio,
+    totalInvestments,
+    holdings,
     monthlyIncome,
     monthlyExpense,
     netSavings,
@@ -113,7 +129,7 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
 
-        {/* Hero Balance Card */}
+        {/* Hero Balance Sheet Card (Monarch Net Worth, Assets & Liabilities) */}
         <Card elevated highlight style={styles.heroCard}>
           <View style={styles.balanceHeader}>
             <Text style={styles.balanceLabel}>Total Net Worth</Text>
@@ -133,6 +149,34 @@ export default function DashboardScreen() {
           <Text style={styles.balanceAmount}>
             {hideBalance ? '••••••••' : formatAmount(totalNetWorth)}
           </Text>
+
+          {/* Monarch Balance Sheet: Assets vs Liabilities */}
+          <View style={styles.balanceSheetRow}>
+            <View style={styles.balanceSheetCol}>
+              <Text style={styles.balanceSheetSub}>Total Assets</Text>
+              <Text style={[styles.balanceSheetVal, { color: COLORS.income }]}>
+                {hideBalance ? '••••' : formatAmount(totalAssets)}
+              </Text>
+            </View>
+
+            <View style={styles.balanceSheetDivider} />
+
+            <View style={styles.balanceSheetCol}>
+              <Text style={styles.balanceSheetSub}>Liabilities / Debt</Text>
+              <Text style={[styles.balanceSheetVal, { color: COLORS.expense }]}>
+                {hideBalance ? '••••' : formatAmount(totalLiabilities)}
+              </Text>
+            </View>
+
+            <View style={styles.balanceSheetDivider} />
+
+            <View style={styles.balanceSheetCol}>
+              <Text style={styles.balanceSheetSub}>Debt Ratio</Text>
+              <Text style={[styles.balanceSheetVal, { color: COLORS.primaryLight }]}>
+                {debtToAssetRatio}%
+              </Text>
+            </View>
+          </View>
 
           {/* Monthly Income / Expense Split */}
           <View style={styles.cashFlowRow}>
@@ -179,7 +223,7 @@ export default function DashboardScreen() {
           </View>
         </Card>
 
-        {/* Action Buttons */}
+        {/* Quick Action Buttons */}
         <View style={styles.actionGrid}>
           <Pressable
             style={({ pressed }) => [
@@ -191,8 +235,8 @@ export default function DashboardScreen() {
             accessibilityRole="button"
             accessibilityLabel="Add Expense"
           >
-            <Ionicons name="remove-circle" size={20} color="#FFF" />
-            <Text style={styles.actionBtnText}>Add Expense</Text>
+            <Ionicons name="remove-circle" size={18} color="#FFF" />
+            <Text style={styles.actionBtnText}>Expense</Text>
           </Pressable>
 
           <Pressable
@@ -205,9 +249,116 @@ export default function DashboardScreen() {
             accessibilityRole="button"
             accessibilityLabel="Add Income"
           >
-            <Ionicons name="add-circle" size={20} color="#FFF" />
-            <Text style={styles.actionBtnText}>Add Income</Text>
+            <Ionicons name="add-circle" size={18} color="#FFF" />
+            <Text style={styles.actionBtnText}>Income</Text>
           </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionBtn,
+              { backgroundColor: COLORS.purple },
+              pressed && styles.actionBtnPressed,
+            ]}
+            onPress={() => router.push('/modal/holding')}
+            accessibilityRole="button"
+            accessibilityLabel="Add Asset"
+          >
+            <Ionicons name="trending-up" size={18} color="#FFF" />
+            <Text style={styles.actionBtnText}>+ Asset</Text>
+          </Pressable>
+        </View>
+
+        {/* Monarch Investments & Holdings Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Investments & Assets</Text>
+              <Text style={styles.sectionSub}>
+                Total Portfolio: {formatAmount(totalInvestments)}
+              </Text>
+            </View>
+
+            <Pressable
+              style={styles.addSectionBtn}
+              onPress={() => router.push('/modal/holding')}
+            >
+              <Ionicons name="add" size={14} color="#FFF" />
+              <Text style={styles.addSectionBtnText}>Add Asset</Text>
+            </Pressable>
+          </View>
+
+          {holdings.length === 0 ? (
+            <Card style={styles.emptyCard}>
+              <Ionicons name="trending-up-outline" size={32} color={COLORS.textMuted} />
+              <Text style={styles.emptyTitle}>No investments tracked</Text>
+              <Text style={styles.emptySubtitle}>
+                Add your stocks, crypto, ETFs, or real estate to track overall portfolio valuation.
+              </Text>
+              <Pressable
+                style={styles.emptyBtn}
+                onPress={() => router.push('/modal/holding')}
+              >
+                <Text style={styles.emptyBtnText}>Add Your First Asset</Text>
+              </Pressable>
+            </Card>
+          ) : (
+            <Card style={styles.holdingsListCard}>
+              {holdings.map((h, idx) => {
+                const meta = ASSET_CLASS_META[h.assetClass] || ASSET_CLASS_META.other;
+                const isLast = idx === holdings.length - 1;
+                return (
+                  <Pressable
+                    key={h.id}
+                    style={[styles.holdingRow, !isLast && styles.holdingRowBorder]}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/modal/holding',
+                        params: { id: h.id },
+                      })
+                    }
+                  >
+                    <View style={styles.holdingLeft}>
+                      <View
+                        style={[
+                          styles.holdingIconWrap,
+                          { backgroundColor: meta.color + '20' },
+                        ]}
+                      >
+                        <Ionicons
+                          name={meta.icon as any}
+                          size={18}
+                          color={meta.color}
+                        />
+                      </View>
+                      <View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.holdingSymbol}>{h.symbol}</Text>
+                          <View
+                            style={[
+                              styles.assetClassTag,
+                              { backgroundColor: meta.color + '20' },
+                            ]}
+                          >
+                            <Text style={[styles.assetClassTagText, { color: meta.color }]}>
+                              {meta.label}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.holdingName} numberOfLines={1}>
+                          {h.name} • {h.quantity} units
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.alignRight}>
+                      <Text style={styles.holdingVal}>{formatAmount(h.currentValue)}</Text>
+                      <Ionicons name="chevron-forward" size={14} color={COLORS.textMuted} />
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </Card>
+          )}
         </View>
 
         {/* Upcoming Bills section */}
@@ -320,8 +471,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   headerIconBtn: {
-    width: 44,
-    height: 44,
+    width: 38,
+    height: 38,
     borderRadius: RADIUS.full,
     backgroundColor: COLORS.card,
     borderWidth: 1,
@@ -331,42 +482,72 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     padding: SPACING.lg,
-    borderRadius: RADIUS.lg,
     marginBottom: SPACING.md,
   },
   balanceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
   },
   balanceLabel: {
     color: COLORS.textSecondary,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   balanceAmount: {
     color: COLORS.textPrimary,
-    fontSize: 34,
+    fontSize: 32,
     fontWeight: '800',
-    letterSpacing: -0.8,
-    marginBottom: SPACING.lg,
+    letterSpacing: -0.5,
+    marginVertical: SPACING.xs,
+  },
+  balanceSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.cardElevated,
+    borderRadius: RADIUS.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginVertical: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  balanceSheetCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  balanceSheetDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: COLORS.border,
+  },
+  balanceSheetSub: {
+    color: COLORS.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  balanceSheetVal: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   cashFlowRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    marginTop: 4,
   },
   cashFlowItem: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: 10,
   },
   arrowCircle: {
     width: 28,
@@ -387,7 +568,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     width: 1,
-    height: 28,
+    height: 30,
     backgroundColor: COLORS.border,
     marginHorizontal: SPACING.sm,
   },
@@ -395,20 +576,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: SPACING.md,
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
   },
   ratePill: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     backgroundColor: COLORS.primaryGlow,
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: RADIUS.full,
-    gap: 4,
   },
   rateText: {
     color: COLORS.textSecondary,
     fontSize: 12,
+    fontWeight: '500',
   },
   rateHighlight: {
     color: COLORS.primaryLight,
@@ -421,29 +606,30 @@ const styles = StyleSheet.create({
   },
   actionGrid: {
     flexDirection: 'row',
-    gap: SPACING.md,
-    marginBottom: SPACING.lg,
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
   },
   actionBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: SPACING.sm,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: RADIUS.md,
+    gap: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 6,
+    shadowRadius: 4,
     elevation: 3,
   },
   actionBtnPressed: {
     opacity: 0.85,
+    transform: [{ scale: 0.98 }],
   },
   actionBtnText: {
     color: '#FFF',
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
   },
   section: {
@@ -460,6 +646,80 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
   },
+  sectionSub: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    marginTop: 1,
+  },
+  addSectionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.cardElevated,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  addSectionBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  holdingsListCard: {
+    padding: 0,
+    overflow: 'hidden',
+  },
+  holdingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: SPACING.md,
+  },
+  holdingRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  holdingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  holdingIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  holdingSymbol: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  assetClassTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.sm,
+  },
+  assetClassTagText: {
+    fontSize: 9,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  holdingName: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  holdingVal: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
   seeAllText: {
     color: COLORS.primaryLight,
     fontSize: 13,
@@ -469,7 +729,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: COLORS.card,
     borderRadius: RADIUS.full,
-    padding: 3,
+    padding: 2,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
@@ -491,11 +751,11 @@ const styles = StyleSheet.create({
   },
   txListCard: {
     padding: 0,
-    paddingHorizontal: SPACING.sm,
+    overflow: 'hidden',
   },
   emptyCard: {
     alignItems: 'center',
-    padding: SPACING.xl,
+    padding: SPACING.lg,
   },
   emptyTitle: {
     color: COLORS.textPrimary,
@@ -508,5 +768,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginTop: 4,
+    marginBottom: SPACING.md,
+  },
+  emptyBtn: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.md,
+  },
+  emptyBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  alignRight: {
+    alignItems: 'flex-end',
   },
 });

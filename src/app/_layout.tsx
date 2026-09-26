@@ -10,28 +10,42 @@ import { COLORS, RADIUS, SPACING } from '../constants/theme';
 
 function AppContent() {
   const { settings, loading } = useFinancial();
-  const [isLocked, setIsLocked] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
 
-  useEffect(() => {
-    if (!loading && settings.biometricLock) {
-      setIsLocked(true);
-      authenticateUser();
-    }
-  }, [loading, settings.biometricLock]);
-
-  const authenticateUser = async () => {
+  const authenticateUser = React.useCallback(async () => {
     try {
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Unlock Money Management',
         fallbackLabel: 'Use Device Passcode',
       });
       if (result.success) {
-        setIsLocked(false);
+        setIsUnlocked(true);
       }
     } catch (e) {
       console.error('Biometric authentication failed:', e);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!loading && settings.biometricLock && !isUnlocked) {
+      LocalAuthentication.authenticateAsync({
+        promptMessage: 'Unlock Money Management',
+        fallbackLabel: 'Use Device Passcode',
+      }).then((result) => {
+        if (active && result.success) {
+          setIsUnlocked(true);
+        }
+      }).catch((e) => {
+        console.error('Biometric authentication failed:', e);
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [loading, settings.biometricLock, isUnlocked]);
+
+  const isLocked = !loading && settings.biometricLock && !isUnlocked;
 
   if (isLocked) {
     return (
@@ -91,6 +105,22 @@ function AppContent() {
         />
         <Stack.Screen
           name="modal/account"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="modal/goal"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="modal/holding"
           options={{
             presentation: 'modal',
             headerShown: false,

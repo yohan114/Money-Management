@@ -1,5 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Transaction, Category, Account, Budget, RecurringItem, UserSettings } from '../types';
+import {
+  Transaction,
+  Category,
+  Account,
+  Budget,
+  RecurringItem,
+  UserSettings,
+  FinancialGoal,
+  InvestmentHolding,
+  TransactionRule,
+} from '../types';
 import { DEFAULT_CATEGORIES, DEFAULT_ACCOUNTS } from '../constants/theme';
 
 const STORAGE_KEYS = {
@@ -8,6 +18,9 @@ const STORAGE_KEYS = {
   ACCOUNTS: '@money_management_accounts_v3',
   BUDGETS: '@money_management_budgets_v3',
   RECURRING: '@money_management_recurring_v3',
+  GOALS: '@money_management_goals_v3',
+  HOLDINGS: '@money_management_holdings_v3',
+  RULES: '@money_management_rules_v3',
   SETTINGS: '@money_management_settings_v3',
   INITIALIZED: '@money_management_initialized_v3',
 };
@@ -34,6 +47,57 @@ export const SAMPLE_BUDGETS: Budget[] = [
   { id: 'b-shopping', categoryId: 'cat-shopping', monthlyLimit: 30000, month: 'global' },
   { id: 'b-entertainment', categoryId: 'cat-entertainment', monthlyLimit: 15000, month: 'global' },
   { id: 'b-utilities', categoryId: 'cat-utilities', monthlyLimit: 20000, month: 'global' },
+];
+
+export const SAMPLE_GOALS: FinancialGoal[] = [
+  {
+    id: 'g-emergency',
+    title: 'Emergency Safety Net (6 Months)',
+    targetAmount: 1000000,
+    currentAmount: 650000,
+    targetDate: '2027-06-30',
+    icon: 'shield-checkmark',
+    color: '#10B981',
+  },
+  {
+    id: 'g-vacation',
+    title: 'Family Holiday in Europe',
+    targetAmount: 500000,
+    currentAmount: 220000,
+    targetDate: '2026-12-20',
+    icon: 'airplane',
+    color: '#3B82F6',
+  },
+  {
+    id: 'g-house',
+    title: 'Home Down Payment',
+    targetAmount: 3500000,
+    currentAmount: 1200000,
+    targetDate: '2028-01-01',
+    icon: 'home',
+    color: '#8B5CF6',
+  },
+];
+
+export const SAMPLE_HOLDINGS: InvestmentHolding[] = [
+  {
+    id: 'h-sp500',
+    symbol: 'VOO',
+    name: 'Vanguard S&P 500 ETF',
+    assetClass: 'etf',
+    quantity: 4,
+    currentValue: 620000,
+    accountId: 'acc-savings',
+  },
+  {
+    id: 'h-btc',
+    symbol: 'BTC',
+    name: 'Bitcoin Digital Gold',
+    assetClass: 'crypto',
+    quantity: 0.03,
+    currentValue: 285000,
+    accountId: 'acc-savings',
+  },
 ];
 
 export const SAMPLE_RECURRING: RecurringItem[] = [
@@ -142,76 +206,14 @@ export const SAMPLE_TRANSACTIONS: Transaction[] = [
     date: getRelativeDateISO(3, 16),
     note: 'Client mobile app UI milestone payout',
   },
-  {
-    id: 'tx-06',
-    type: 'expense',
-    amount: 2200,
-    categoryId: 'cat-food',
-    accountId: 'acc-cash',
-    date: getRelativeDateISO(3, 12),
-    note: 'Coffee & bakery snack',
-  },
-  {
-    id: 'tx-07',
-    type: 'expense',
-    amount: 18500,
-    categoryId: 'cat-shopping',
-    accountId: 'acc-credit-card',
-    date: getRelativeDateISO(4, 15),
-    note: 'Casual clothes & footwear purchase',
-  },
-  {
-    id: 'tx-08',
-    type: 'expense',
-    amount: 12400,
-    categoryId: 'cat-utilities',
-    accountId: 'acc-main-bank',
-    date: getRelativeDateISO(6, 11),
-    note: 'Electricity bill payment',
-  },
-  {
-    id: 'tx-09',
-    type: 'expense',
-    amount: 4200,
-    categoryId: 'cat-entertainment',
-    accountId: 'acc-credit-card',
-    date: getRelativeDateISO(7, 10),
-    note: 'Online media subscriptions',
-  },
-  {
-    id: 'tx-10',
-    type: 'expense',
-    amount: 65000,
-    categoryId: 'cat-housing',
-    accountId: 'acc-main-bank',
-    date: getRelativeDateISO(10, 10),
-    note: 'Monthly house rent bank transfer',
-  },
-  {
-    id: 'tx-11',
-    type: 'expense',
-    amount: 16200,
-    categoryId: 'cat-groceries',
-    accountId: 'acc-main-bank',
-    date: getRelativeDateISO(12, 17),
-    note: 'Pantry items & household supplies',
-  },
-  {
-    id: 'tx-12',
-    type: 'income',
-    amount: 25000,
-    categoryId: 'cat-investments',
-    accountId: 'acc-savings',
-    date: getRelativeDateISO(15, 14),
-    note: 'Monthly investment interest yield',
-  },
 ];
 
 export const DEMO_ACCOUNTS: Account[] = [
   { id: 'acc-cash', name: 'Cash Wallet', type: 'cash', balance: 35000, icon: 'wallet', color: '#10B981' },
   { id: 'acc-main-bank', name: 'Commercial Bank Account', type: 'bank', balance: 285000, icon: 'business', color: '#3B82F6' },
-  { id: 'acc-credit-card', name: 'Mastercard / Credit Card', type: 'card', balance: -24500, icon: 'card', color: '#EC4899' },
+  { id: 'acc-credit-card', name: 'Credit Card', type: 'card', balance: 24500, icon: 'card', color: '#EC4899', isLiability: true },
   { id: 'acc-savings', name: 'High-Yield Savings / Fixed', type: 'savings', balance: 750000, icon: 'shield-checkmark', color: '#8B5CF6' },
+  { id: 'acc-invest', name: 'Global Investment Broker', type: 'investment', balance: 905000, icon: 'trending-up', color: '#06B6D4' },
 ];
 
 export const StorageService = {
@@ -226,6 +228,9 @@ export const StorageService = {
           [STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEFAULT_ACCOUNTS)], // Initial 0 balances!
           [STORAGE_KEYS.BUDGETS, JSON.stringify([])], // Clean empty budgets!
           [STORAGE_KEYS.RECURRING, JSON.stringify([])], // Clean empty recurring bills!
+          [STORAGE_KEYS.GOALS, JSON.stringify([])], // Clean empty goals!
+          [STORAGE_KEYS.HOLDINGS, JSON.stringify([])], // Clean empty investment holdings!
+          [STORAGE_KEYS.RULES, JSON.stringify([])], // Clean empty rules!
           [STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS)],
           [STORAGE_KEYS.INITIALIZED, 'true'],
         ]);
@@ -303,6 +308,45 @@ export const StorageService = {
     await AsyncStorage.setItem(STORAGE_KEYS.RECURRING, JSON.stringify(items));
   },
 
+  async getGoals(): Promise<FinancialGoal[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.GOALS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveGoals(goals: FinancialGoal[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(goals));
+  },
+
+  async getHoldings(): Promise<InvestmentHolding[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.HOLDINGS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveHoldings(holdings: InvestmentHolding[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.HOLDINGS, JSON.stringify(holdings));
+  },
+
+  async getRules(): Promise<TransactionRule[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.RULES);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveRules(rules: TransactionRule[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.RULES, JSON.stringify(rules));
+  },
+
   async getSettings(): Promise<UserSettings> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
@@ -324,6 +368,8 @@ export const StorageService = {
       [STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEMO_ACCOUNTS)],
       [STORAGE_KEYS.BUDGETS, JSON.stringify(SAMPLE_BUDGETS)],
       [STORAGE_KEYS.RECURRING, JSON.stringify(SAMPLE_RECURRING)],
+      [STORAGE_KEYS.GOALS, JSON.stringify(SAMPLE_GOALS)],
+      [STORAGE_KEYS.HOLDINGS, JSON.stringify(SAMPLE_HOLDINGS)],
       [STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS)],
       [STORAGE_KEYS.INITIALIZED, 'true'],
     ]);
@@ -335,6 +381,9 @@ export const StorageService = {
       [STORAGE_KEYS.TRANSACTIONS, JSON.stringify([])],
       [STORAGE_KEYS.BUDGETS, JSON.stringify([])],
       [STORAGE_KEYS.RECURRING, JSON.stringify([])],
+      [STORAGE_KEYS.GOALS, JSON.stringify([])],
+      [STORAGE_KEYS.HOLDINGS, JSON.stringify([])],
+      [STORAGE_KEYS.RULES, JSON.stringify([])],
       [STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEFAULT_ACCOUNTS)],
     ]);
   },

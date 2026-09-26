@@ -22,7 +22,7 @@ export default function RecurringModal() {
   const [title, setTitle] = useState('');
   const [amountStr, setAmountStr] = useState('');
   const [type, setType] = useState<TransactionType>('expense');
-  const [frequency, setFrequency] = useState<RecurringFrequency>('monthly');
+  const [frequency] = useState<RecurringFrequency>('monthly');
   const [dueDay, setDueDay] = useState(1);
 
   const typeCategories = categories.filter((c) => c.type === type);

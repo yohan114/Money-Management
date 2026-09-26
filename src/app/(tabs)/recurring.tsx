@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,9 @@ import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 import { useFinancial } from '../../context/FinancialContext';
 import { Card } from '../../components/Card';
 import { BillReminderCard } from '../../components/BillReminderCard';
+import { RecurringItem } from '../../types';
+
+const DAYS_OF_WEEK = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
 export default function RecurringScreen() {
   const router = useRouter();
@@ -22,7 +25,11 @@ export default function RecurringScreen() {
     payRecurringItem,
     deleteRecurringItem,
     formatAmount,
+    selectedMonth,
   } = useFinancial();
+
+  const [activeTab, setActiveTab] = useState<'list' | 'calendar'>('list');
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState<number | null>(null);
 
   // Total recurring commitments per month
   const totalMonthlyCommitments = recurringItems
@@ -49,6 +56,58 @@ export default function RecurringScreen() {
     );
   };
 
+  // Calendar calculations for selected month
+  const calendarData = useMemo(() => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const firstDayOfWeek = new Date(year, month - 1, 1).getDay();
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    // Map bills to due days
+    const billsByDay: Record<number, RecurringItem[]> = {};
+    recurringItems.forEach((item) => {
+      if (item.active) {
+        const day = Math.min(item.dueDay, daysInMonth);
+        if (!billsByDay[day]) {
+          billsByDay[day] = [];
+        }
+        billsByDay[day].push(item);
+      }
+    });
+
+    const cells: ({ day: number; isCurrentMonth: boolean; items: RecurringItem[] } | null)[] = [];
+
+    // Leading empty cells
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      cells.push(null);
+    }
+
+    // Days in month
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push({
+        day: d,
+        isCurrentMonth: true,
+        items: billsByDay[d] || [],
+      });
+    }
+
+    return {
+      cells,
+      billsByDay,
+      daysInMonth,
+    };
+  }, [selectedMonth, recurringItems]);
+
+  // Selected calendar day items or all calendar items
+  const calendarFilteredItems = useMemo(() => {
+    if (selectedCalendarDay !== null) {
+      return calendarData.billsByDay[selectedCalendarDay] || [];
+    }
+    // Return all items sorted by dueDay
+    return [...recurringItems]
+      .filter((r) => r.active)
+      .sort((a, b) => a.dueDay - b.dueDay);
+  }, [selectedCalendarDay, calendarData, recurringItems]);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
@@ -59,7 +118,7 @@ export default function RecurringScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>Subscriptions & Bills</Text>
-            <Text style={styles.subtitle}>Track upcoming recurring charges</Text>
+            <Text style={styles.subtitle}>Monarch cash calendar & recurring charges</Text>
           </View>
 
           <Pressable
@@ -96,37 +155,187 @@ export default function RecurringScreen() {
           </Card>
         </View>
 
-        {/* Recurring List */}
-        <View style={styles.listSection}>
-          <Text style={styles.sectionTitle}>
-            Scheduled Payments ({recurringItems.length})
-          </Text>
+        {/* Segmented View Switcher: List vs Calendar */}
+        <View style={styles.segmentedContainer}>
+          <Pressable
+            style={[styles.segmentBtn, activeTab === 'list' && styles.segmentBtnActive]}
+            onPress={() => setActiveTab('list')}
+          >
+            <Ionicons
+              name="list"
+              size={16}
+              color={activeTab === 'list' ? '#FFF' : COLORS.textMuted}
+            />
+            <Text
+              style={[
+                styles.segmentBtnText,
+                activeTab === 'list' && styles.segmentBtnTextActive,
+              ]}
+            >
+              Schedule List ({recurringItems.length})
+            </Text>
+          </Pressable>
 
-          {recurringItems.length === 0 ? (
-            <Card style={styles.emptyCard}>
-              <Ionicons name="calendar-outline" size={40} color={COLORS.textMuted} />
-              <Text style={styles.emptyTitle}>No recurring items</Text>
-              <Text style={styles.emptySubtitle}>
-                Add regular rent, subscriptions (Netflix, Spotify), utilities, or salary to track them effortlessly.
-              </Text>
-              <Pressable
-                style={styles.emptyBtn}
-                onPress={() => router.push('/modal/recurring')}
-              >
-                <Text style={styles.emptyBtnText}>Add Your First Bill</Text>
-              </Pressable>
-            </Card>
-          ) : (
-            recurringItems.map((item) => (
-              <BillReminderCard
-                key={item.id}
-                item={item}
-                onPay={() => handlePay(item.id, item.title)}
-                onDelete={() => handleDelete(item.id, item.title)}
-              />
-            ))
-          )}
+          <Pressable
+            style={[styles.segmentBtn, activeTab === 'calendar' && styles.segmentBtnActive]}
+            onPress={() => setActiveTab('calendar')}
+          >
+            <Ionicons
+              name="calendar"
+              size={16}
+              color={activeTab === 'calendar' ? '#FFF' : COLORS.textMuted}
+            />
+            <Text
+              style={[
+                styles.segmentBtnText,
+                activeTab === 'calendar' && styles.segmentBtnTextActive,
+              ]}
+            >
+              Calendar Matrix
+            </Text>
+          </Pressable>
         </View>
+
+        {/* TAB 1: LIST VIEW */}
+        {activeTab === 'list' && (
+          <View style={styles.listSection}>
+            <Text style={styles.sectionTitle}>
+              Scheduled Commitments ({recurringItems.length})
+            </Text>
+
+            {recurringItems.length === 0 ? (
+              <Card style={styles.emptyCard}>
+                <Ionicons name="calendar-outline" size={40} color={COLORS.textMuted} />
+                <Text style={styles.emptyTitle}>No recurring items</Text>
+                <Text style={styles.emptySubtitle}>
+                  Add regular rent, subscriptions (Netflix, Spotify), utilities, or salary to track them effortlessly.
+                </Text>
+                <Pressable
+                  style={styles.emptyBtn}
+                  onPress={() => router.push('/modal/recurring')}
+                >
+                  <Text style={styles.emptyBtnText}>Add Your First Bill</Text>
+                </Pressable>
+              </Card>
+            ) : (
+              recurringItems.map((item) => (
+                <BillReminderCard
+                  key={item.id}
+                  item={item}
+                  onPay={() => handlePay(item.id, item.title)}
+                  onDelete={() => handleDelete(item.id, item.title)}
+                />
+              ))
+            )}
+          </View>
+        )}
+
+        {/* TAB 2: CALENDAR MATRIX VIEW */}
+        {activeTab === 'calendar' && (
+          <View style={styles.calendarSection}>
+            {/* Calendar Grid Card */}
+            <Card elevated style={styles.calendarCard}>
+              <View style={styles.calendarHeaderRow}>
+                <Text style={styles.calendarTitle}>Month of {selectedMonth}</Text>
+                {selectedCalendarDay !== null && (
+                  <Pressable
+                    style={styles.clearFilterBtn}
+                    onPress={() => setSelectedCalendarDay(null)}
+                  >
+                    <Text style={styles.clearFilterText}>Show All Days</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {/* Days of Week Header */}
+              <View style={styles.daysOfWeekRow}>
+                {DAYS_OF_WEEK.map((d) => (
+                  <Text key={d} style={styles.dayOfWeekText}>
+                    {d}
+                  </Text>
+                ))}
+              </View>
+
+              {/* Grid Cells */}
+              <View style={styles.gridContainer}>
+                {calendarData.cells.map((cell, idx) => {
+                  if (!cell) {
+                    return <View key={`empty-${idx}`} style={styles.calendarCell} />;
+                  }
+
+                  const hasBills = cell.items.length > 0;
+                  const hasIncome = cell.items.some((i) => i.type === 'income');
+                  const isSelected = selectedCalendarDay === cell.day;
+
+                  return (
+                    <Pressable
+                      key={`day-${cell.day}`}
+                      style={[
+                        styles.calendarCell,
+                        hasBills && styles.calendarCellHasBill,
+                        isSelected && styles.calendarCellSelected,
+                      ]}
+                      onPress={() =>
+                        setSelectedCalendarDay(isSelected ? null : cell.day)
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.cellDayText,
+                          hasBills && styles.cellDayTextBold,
+                          isSelected && styles.cellDayTextSelected,
+                        ]}
+                      >
+                        {cell.day}
+                      </Text>
+
+                      {hasBills && (
+                        <View
+                          style={[
+                            styles.cellDot,
+                            {
+                              backgroundColor: hasIncome ? COLORS.income : COLORS.expense,
+                            },
+                          ]}
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </Card>
+
+            {/* Selected Day Bills Header */}
+            <View style={styles.dayBillsSection}>
+              <Text style={styles.sectionTitle}>
+                {selectedCalendarDay !== null
+                  ? `Bills Due on Day ${selectedCalendarDay}`
+                  : `All Scheduled Bills for ${selectedMonth}`}
+              </Text>
+
+              {calendarFilteredItems.length === 0 ? (
+                <Card style={styles.emptyCard}>
+                  <Ionicons name="sunny-outline" size={32} color={COLORS.textMuted} />
+                  <Text style={styles.emptyTitle}>
+                    No bills due on Day {selectedCalendarDay}
+                  </Text>
+                  <Text style={styles.emptySubtitle}>
+                    Tap a highlighted day on the calendar above to inspect scheduled payments.
+                  </Text>
+                </Card>
+              ) : (
+                calendarFilteredItems.map((item) => (
+                  <BillReminderCard
+                    key={item.id}
+                    item={item}
+                    onPay={() => handlePay(item.id, item.title)}
+                    onDelete={() => handleDelete(item.id, item.title)}
+                  />
+                ))
+              )}
+            </View>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -175,7 +384,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     gap: SPACING.md,
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.md,
   },
   statCard: {
     flex: 1,
@@ -200,8 +409,122 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
+  segmentedContainer: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.full,
+    padding: 4,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  segmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: RADIUS.full,
+    gap: 6,
+  },
+  segmentBtnActive: {
+    backgroundColor: COLORS.primary,
+  },
+  segmentBtnText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  segmentBtnTextActive: {
+    color: '#FFF',
+    fontWeight: '700',
+  },
   listSection: {
     marginBottom: SPACING.lg,
+  },
+  calendarSection: {
+    marginBottom: SPACING.lg,
+  },
+  calendarCard: {
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  calendarHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  calendarTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  clearFilterBtn: {
+    backgroundColor: COLORS.cardElevated,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: RADIUS.sm,
+  },
+  clearFilterText: {
+    color: COLORS.primaryLight,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  daysOfWeekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    marginBottom: 6,
+  },
+  dayOfWeekText: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    width: 38,
+    textAlign: 'center',
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  calendarCell: {
+    width: '14.28%',
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: RADIUS.sm,
+    position: 'relative',
+  },
+  calendarCellHasBill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  calendarCellSelected: {
+    backgroundColor: COLORS.primary,
+  },
+  cellDayText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+  },
+  cellDayTextBold: {
+    color: COLORS.textPrimary,
+    fontWeight: '700',
+  },
+  cellDayTextSelected: {
+    color: '#FFF',
+    fontWeight: '800',
+  },
+  cellDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    position: 'absolute',
+    bottom: 4,
+  },
+  dayBillsSection: {
+    marginBottom: SPACING.md,
   },
   sectionTitle: {
     color: COLORS.textPrimary,

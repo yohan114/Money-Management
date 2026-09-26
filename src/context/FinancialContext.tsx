@@ -6,6 +6,9 @@ import {
   Budget,
   RecurringItem,
   UserSettings,
+  FinancialGoal,
+  InvestmentHolding,
+  TransactionRule,
 } from '../types';
 import { StorageService, DEFAULT_SETTINGS } from '../services/storage';
 
@@ -22,6 +25,15 @@ interface MonthlyCashFlow {
   expense: number;
 }
 
+export interface DayForecast {
+  date: string; // YYYY-MM-DD
+  dayNum: number;
+  projectedBalance: number;
+  incoming: number;
+  outgoing: number;
+  events: string[];
+}
+
 interface FinancialContextValue {
   loading: boolean;
   transactions: Transaction[];
@@ -29,6 +41,9 @@ interface FinancialContextValue {
   accounts: Account[];
   budgets: Budget[];
   recurringItems: RecurringItem[];
+  goals: FinancialGoal[];
+  holdings: InvestmentHolding[];
+  rules: TransactionRule[];
   settings: UserSettings;
   selectedMonth: string; // YYYY-MM
   setSelectedMonth: (month: string) => void;
@@ -51,19 +66,40 @@ interface FinancialContextValue {
   updateAccount: (data: Account) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
 
+  addGoal: (data: Omit<FinancialGoal, 'id'>) => Promise<void>;
+  updateGoal: (data: FinancialGoal) => Promise<void>;
+  deleteGoal: (id: string) => Promise<void>;
+  contributeToGoal: (goalId: string, amount: number, accountId?: string) => Promise<void>;
+
+  addHolding: (data: Omit<InvestmentHolding, 'id'>) => Promise<void>;
+  updateHolding: (data: InvestmentHolding) => Promise<void>;
+  deleteHolding: (id: string) => Promise<void>;
+
+  addRule: (data: Omit<TransactionRule, 'id'>) => Promise<void>;
+  deleteRule: (id: string) => Promise<void>;
+
+  addCategory: (data: Omit<Category, 'id'>) => Promise<void>;
+
   updateSettings: (newSettings: Partial<UserSettings>) => Promise<void>;
   resetDemoData: () => Promise<void>;
   clearAllData: () => Promise<void>;
   formatAmount: (amount: number, options?: { showSign?: boolean; absolute?: boolean }) => string;
 
-  // Computed Metrics
+  // Monarch Wealth Metrics
+  totalAssets: number;
+  totalLiabilities: number;
   totalNetWorth: number;
+  debtToAssetRatio: number;
+  totalInvestments: number;
+
+  // Cash flow & Analytics
   monthlyIncome: number;
   monthlyExpense: number;
   netSavings: number;
   savingsRate: number;
   categorySpending: CategorySpend[];
   cashFlowHistory: MonthlyCashFlow[];
+  cashFlowForecast: DayForecast[];
   upcomingBills: RecurringItem[];
   getCategoryById: (id: string) => Category | undefined;
   getAccountById: (id: string) => Account | undefined;
@@ -79,6 +115,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [recurringItems, setRecurringItems] = useState<RecurringItem[]>([]);
+  const [goals, setGoals] = useState<FinancialGoal[]>([]);
+  const [holdings, setHoldings] = useState<InvestmentHolding[]>([]);
+  const [rules, setRules] = useState<TransactionRule[]>([]);
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
 
   const currentYearMonth = useMemo(() => {
@@ -93,12 +132,15 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const loadAllData = useCallback(async () => {
     setLoading(true);
     await StorageService.initFreshDataIfFirstTime();
-    const [txs, cats, accs, bdgs, recs, sets] = await Promise.all([
+    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets] = await Promise.all([
       StorageService.getTransactions(),
       StorageService.getCategories(),
       StorageService.getAccounts(),
       StorageService.getBudgets(),
       StorageService.getRecurring(),
+      StorageService.getGoals(),
+      StorageService.getHoldings(),
+      StorageService.getRules(),
       StorageService.getSettings(),
     ]);
 
@@ -107,12 +149,24 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setAccounts(accs);
     setBudgets(bdgs);
     setRecurringItems(recs);
+    setGoals(gls);
+    setHoldings(hlds);
+    setRules(rls);
     setSettings(sets);
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    loadAllData();
+    let isMounted = true;
+    const fetchInitialData = async () => {
+      if (isMounted) {
+        await loadAllData();
+      }
+    };
+    fetchInitialData();
+    return () => {
+      isMounted = false;
+    };
   }, [loadAllData]);
 
   // Format money string helper
@@ -124,16 +178,16 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         maximumFractionDigits: 2,
       });
 
-      const sym = settings.currencySymbol || '$';
+      const sym = settings.currencySymbol || 'Rs.';
       if (options?.showSign && amount > 0) {
-        return `+${sym}${formattedNumber}`;
+        return `+${sym} ${formattedNumber}`;
       } else if (options?.showSign && amount < 0) {
-        return `-${sym}${Math.abs(val).toLocaleString(undefined, {
+        return `-${sym} ${Math.abs(val).toLocaleString(undefined, {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         })}`;
       }
-      return `${sym}${formattedNumber}`;
+      return `${sym} ${formattedNumber}`;
     },
     [settings.currencySymbol]
   );
@@ -149,11 +203,30 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [accounts]
   );
 
-  // Add Transaction
+  // Add Transaction with Monarch Automation Rules
   const addTransaction = useCallback(
     async (data: Omit<Transaction, 'id'>) => {
+      let finalCategoryId = data.categoryId;
+      let finalTags = data.tags ? [...data.tags] : [];
+
+      // Monarch Rules engine: auto-categorize and tag by keyword
+      if (data.note) {
+        const lowerNote = data.note.toLowerCase();
+        for (const rule of rules) {
+          if (lowerNote.includes(rule.keyword.toLowerCase())) {
+            finalCategoryId = rule.categoryId;
+            if (rule.tag && !finalTags.includes(rule.tag)) {
+              finalTags.push(rule.tag);
+            }
+            break;
+          }
+        }
+      }
+
       const newTx: Transaction = {
         ...data,
+        categoryId: finalCategoryId,
+        tags: finalTags.length > 0 ? finalTags : undefined,
         id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       };
 
@@ -164,7 +237,14 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       // Adjust account balance
       const updatedAccounts = accounts.map((acc) => {
         if (acc.id === data.accountId) {
-          const delta = data.type === 'income' ? data.amount : -data.amount;
+          const isLiability = acc.isLiability || acc.type === 'card' || acc.type === 'loan';
+          let delta = 0;
+          if (isLiability) {
+            // Charging expense increases card balance/debt, payment reduces it
+            delta = data.type === 'expense' ? data.amount : -data.amount;
+          } else {
+            delta = data.type === 'income' ? data.amount : -data.amount;
+          }
           return { ...acc, balance: acc.balance + delta };
         }
         return acc;
@@ -172,7 +252,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setAccounts(updatedAccounts);
       await StorageService.saveAccounts(updatedAccounts);
     },
-    [transactions, accounts]
+    [transactions, accounts, rules]
   );
 
   // Update Transaction
@@ -184,16 +264,30 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       await StorageService.saveTransactions(updatedTxs);
 
       if (oldTx) {
-        // Recalculate account balances
         const updatedAccounts = accounts.map((acc) => {
           let balance = acc.balance;
+          const isLiability = acc.isLiability || acc.type === 'card' || acc.type === 'loan';
           // Revert old
           if (acc.id === oldTx.accountId) {
-            balance += oldTx.type === 'income' ? -oldTx.amount : oldTx.amount;
+            const oldDelta = isLiability
+              ? oldTx.type === 'expense'
+                ? oldTx.amount
+                : -oldTx.amount
+              : oldTx.type === 'income'
+              ? oldTx.amount
+              : -oldTx.amount;
+            balance -= oldDelta;
           }
           // Apply new
           if (acc.id === tx.accountId) {
-            balance += tx.type === 'income' ? tx.amount : -tx.amount;
+            const newDelta = isLiability
+              ? tx.type === 'expense'
+                ? tx.amount
+                : -tx.amount
+              : tx.type === 'income'
+              ? tx.amount
+              : -tx.amount;
+            balance += newDelta;
           }
           return { ...acc, balance };
         });
@@ -215,8 +309,15 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (txToDelete) {
         const updatedAccounts = accounts.map((acc) => {
           if (acc.id === txToDelete.accountId) {
-            const revertDelta = txToDelete.type === 'income' ? -txToDelete.amount : txToDelete.amount;
-            return { ...acc, balance: acc.balance + revertDelta };
+            const isLiability = acc.isLiability || acc.type === 'card' || acc.type === 'loan';
+            const delta = isLiability
+              ? txToDelete.type === 'expense'
+                ? txToDelete.amount
+                : -txToDelete.amount
+              : txToDelete.type === 'income'
+              ? txToDelete.amount
+              : -txToDelete.amount;
+            return { ...acc, balance: acc.balance - delta };
           }
           return acc;
         });
@@ -291,7 +392,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [recurringItems]
   );
 
-  // Pay recurring bill (registers a transaction for today)
+  // Pay recurring bill
   const payRecurringItem = useCallback(
     async (id: string) => {
       const item = recurringItems.find((r) => r.id === id);
@@ -322,6 +423,10 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     async (data: Omit<Account, 'id'>) => {
       const newAcc: Account = {
         ...data,
+        isLiability:
+          data.isLiability !== undefined
+            ? data.isLiability
+            : data.type === 'card' || data.type === 'loan',
         id: `acc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       };
       const updated = [...accounts, newAcc];
@@ -349,6 +454,132 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [accounts]
   );
 
+  // Goals
+  const addGoal = useCallback(
+    async (data: Omit<FinancialGoal, 'id'>) => {
+      const newGoal: FinancialGoal = {
+        ...data,
+        id: `goal-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      };
+      const updated = [...goals, newGoal];
+      setGoals(updated);
+      await StorageService.saveGoals(updated);
+    },
+    [goals]
+  );
+
+  const updateGoal = useCallback(
+    async (data: FinancialGoal) => {
+      const updated = goals.map((g) => (g.id === data.id ? data : g));
+      setGoals(updated);
+      await StorageService.saveGoals(updated);
+    },
+    [goals]
+  );
+
+  const deleteGoal = useCallback(
+    async (id: string) => {
+      const updated = goals.filter((g) => g.id !== id);
+      setGoals(updated);
+      await StorageService.saveGoals(updated);
+    },
+    [goals]
+  );
+
+  const contributeToGoal = useCallback(
+    async (goalId: string, amount: number, accountId?: string) => {
+      const goal = goals.find((g) => g.id === goalId);
+      if (!goal) return;
+
+      const updatedGoal = { ...goal, currentAmount: goal.currentAmount + amount };
+      await updateGoal(updatedGoal);
+
+      // If an account was debited, record the transfer/expense
+      if (accountId) {
+        await addTransaction({
+          type: 'expense',
+          amount,
+          categoryId: 'cat-investments',
+          accountId,
+          date: new Date().toISOString(),
+          note: `Goal Contribution: ${goal.title}`,
+          tags: ['#goal', '#savings'],
+        });
+      }
+    },
+    [goals, updateGoal, addTransaction]
+  );
+
+  // Investment Holdings
+  const addHolding = useCallback(
+    async (data: Omit<InvestmentHolding, 'id'>) => {
+      const newHolding: InvestmentHolding = {
+        ...data,
+        id: `hold-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      };
+      const updated = [...holdings, newHolding];
+      setHoldings(updated);
+      await StorageService.saveHoldings(updated);
+    },
+    [holdings]
+  );
+
+  const updateHolding = useCallback(
+    async (data: InvestmentHolding) => {
+      const updated = holdings.map((h) => (h.id === data.id ? data : h));
+      setHoldings(updated);
+      await StorageService.saveHoldings(updated);
+    },
+    [holdings]
+  );
+
+  const deleteHolding = useCallback(
+    async (id: string) => {
+      const updated = holdings.filter((h) => h.id !== id);
+      setHoldings(updated);
+      await StorageService.saveHoldings(updated);
+    },
+    [holdings]
+  );
+
+  // Rules
+  const addRule = useCallback(
+    async (data: Omit<TransactionRule, 'id'>) => {
+      const newRule: TransactionRule = {
+        ...data,
+        id: `rule-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      };
+      const updated = [...rules, newRule];
+      setRules(updated);
+      await StorageService.saveRules(updated);
+    },
+    [rules]
+  );
+
+  const deleteRule = useCallback(
+    async (id: string) => {
+      const updated = rules.filter((r) => r.id !== id);
+      setRules(updated);
+      await StorageService.saveRules(updated);
+    },
+    [rules]
+  );
+
+  // Custom Categories
+  const addCategory = useCallback(
+    async (data: Omit<Category, 'id'>) => {
+      const newCat: Category = {
+        ...data,
+        isCustom: true,
+        id: `cat-custom-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      };
+      const updated = [...categories, newCat];
+      setCategories(updated);
+      await StorageService.saveCategories(updated);
+    },
+    [categories]
+  );
+
   // Settings
   const updateSettings = useCallback(
     async (newSettings: Partial<UserSettings>) => {
@@ -371,10 +602,37 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     await loadAllData();
   }, [loadAllData]);
 
-  // Total Net Worth
-  const totalNetWorth = useMemo(() => {
-    return accounts.reduce((acc, curr) => acc + curr.balance, 0);
+  // Monarch Wealth & Net Worth Breakdown
+  const totalAssets = useMemo(() => {
+    const accountAssets = accounts
+      .filter((a) => !a.isLiability && a.type !== 'card' && a.type !== 'loan')
+      .reduce((sum, a) => sum + Math.max(0, a.balance), 0);
+    const holdingsTotal = holdings.reduce((sum, h) => sum + h.currentValue, 0);
+    return accountAssets + holdingsTotal;
+  }, [accounts, holdings]);
+
+  const totalLiabilities = useMemo(() => {
+    return accounts
+      .filter((a) => a.isLiability || a.type === 'card' || a.type === 'loan')
+      .reduce((sum, a) => sum + Math.abs(a.balance), 0);
   }, [accounts]);
+
+  const totalNetWorth = useMemo(() => {
+    return totalAssets - totalLiabilities;
+  }, [totalAssets, totalLiabilities]);
+
+  const debtToAssetRatio = useMemo(() => {
+    if (totalAssets <= 0) return totalLiabilities > 0 ? 100 : 0;
+    return Math.min(100, Math.round((totalLiabilities / totalAssets) * 100));
+  }, [totalAssets, totalLiabilities]);
+
+  const totalInvestments = useMemo(() => {
+    const investAccs = accounts
+      .filter((a) => a.type === 'investment')
+      .reduce((sum, a) => sum + a.balance, 0);
+    const holdingsVal = holdings.reduce((sum, h) => sum + h.currentValue, 0);
+    return investAccs + holdingsVal;
+  }, [accounts, holdings]);
 
   // Selected Month Transactions
   const selectedMonthTransactions = useMemo(() => {
@@ -413,7 +671,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       spendMap[tx.categoryId] = (spendMap[tx.categoryId] || 0) + tx.amount;
     });
 
-    const totalExpense = Object.values(spendMap).reduce((a, b) => a + b, 0);
+    const totalExp = Object.values(spendMap).reduce((a, b) => a + b, 0);
 
     const result: CategorySpend[] = [];
     Object.keys(spendMap).forEach((catId) => {
@@ -423,7 +681,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         result.push({
           category: cat,
           total,
-          percentage: totalExpense > 0 ? (total / totalExpense) * 100 : 0,
+          percentage: totalExp > 0 ? (total / totalExp) * 100 : 0,
         });
       }
     });
@@ -431,11 +689,16 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return result.sort((a, b) => b.total - a.total);
   }, [selectedMonthTransactions, categories]);
 
-  // Category spent helper for a specific category & month
+  // Category spent helper
   const getCategorySpentForMonth = useCallback(
     (categoryId: string, month: string) => {
       return transactions
-        .filter((tx) => tx.categoryId === categoryId && tx.type === 'expense' && (month === 'global' || tx.date.startsWith(month)))
+        .filter(
+          (tx) =>
+            tx.categoryId === categoryId &&
+            tx.type === 'expense' &&
+            (month === 'global' || tx.date.startsWith(month))
+        )
         .reduce((sum, tx) => sum + tx.amount, 0);
     },
     [transactions]
@@ -469,7 +732,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return history;
   }, [transactions]);
 
-  // Upcoming bills: active recurring items
+  // Upcoming bills
   const upcomingBills = useMemo(() => {
     const today = new Date();
     const currentDay = today.getDate();
@@ -477,12 +740,55 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return recurringItems
       .filter((item) => item.active && item.type === 'expense')
       .sort((a, b) => {
-        // Distance in days from today
         const distA = (a.dueDay - currentDay + 31) % 31;
         const distB = (b.dueDay - currentDay + 31) % 31;
         return distA - distB;
       });
   }, [recurringItems]);
+
+  // Monarch Cash Flow Forecasting (30 days predictive timeline)
+  const cashFlowForecast = useMemo(() => {
+    const forecast: DayForecast[] = [];
+    const today = new Date();
+    let rollingBalance = totalAssets;
+
+    for (let i = 1; i <= 30; i++) {
+      const targetDate = new Date();
+      targetDate.setDate(today.getDate() + i);
+      const dayOfMonth = targetDate.getDate();
+      const dateStr = targetDate.toISOString().split('T')[0];
+
+      let incoming = 0;
+      let outgoing = 0;
+      const events: string[] = [];
+
+      // Check recurring items due on this day of month
+      recurringItems.forEach((r) => {
+        if (r.active && r.dueDay === dayOfMonth) {
+          if (r.type === 'income') {
+            incoming += r.amount;
+            events.push(`Income: ${r.title}`);
+          } else {
+            outgoing += r.amount;
+            events.push(`Bill: ${r.title}`);
+          }
+        }
+      });
+
+      rollingBalance = rollingBalance + incoming - outgoing;
+
+      forecast.push({
+        date: dateStr,
+        dayNum: i,
+        projectedBalance: rollingBalance,
+        incoming,
+        outgoing,
+        events,
+      });
+    }
+
+    return forecast;
+  }, [totalAssets, recurringItems]);
 
   const value = useMemo(
     () => ({
@@ -492,6 +798,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       accounts,
       budgets,
       recurringItems,
+      goals,
+      holdings,
+      rules,
       settings,
       selectedMonth,
       setSelectedMonth,
@@ -508,17 +817,32 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       addAccount,
       updateAccount,
       deleteAccount,
+      addGoal,
+      updateGoal,
+      deleteGoal,
+      contributeToGoal,
+      addHolding,
+      updateHolding,
+      deleteHolding,
+      addRule,
+      deleteRule,
+      addCategory,
       updateSettings,
       resetDemoData,
       clearAllData,
       formatAmount,
+      totalAssets,
+      totalLiabilities,
       totalNetWorth,
+      debtToAssetRatio,
+      totalInvestments,
       monthlyIncome,
       monthlyExpense,
       netSavings,
       savingsRate,
       categorySpending,
       cashFlowHistory,
+      cashFlowForecast,
       upcomingBills,
       getCategoryById,
       getAccountById,
@@ -531,6 +855,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       accounts,
       budgets,
       recurringItems,
+      goals,
+      holdings,
+      rules,
       settings,
       selectedMonth,
       addTransaction,
@@ -546,17 +873,32 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       addAccount,
       updateAccount,
       deleteAccount,
+      addGoal,
+      updateGoal,
+      deleteGoal,
+      contributeToGoal,
+      addHolding,
+      updateHolding,
+      deleteHolding,
+      addRule,
+      deleteRule,
+      addCategory,
       updateSettings,
       resetDemoData,
       clearAllData,
       formatAmount,
+      totalAssets,
+      totalLiabilities,
       totalNetWorth,
+      debtToAssetRatio,
+      totalInvestments,
       monthlyIncome,
       monthlyExpense,
       netSavings,
       savingsRate,
       categorySpending,
       cashFlowHistory,
+      cashFlowForecast,
       upcomingBills,
       getCategoryById,
       getAccountById,

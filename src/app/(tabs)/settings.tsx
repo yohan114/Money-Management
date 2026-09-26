@@ -16,15 +16,49 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { COLORS, RADIUS, SPACING, CURRENCIES } from '../../constants/theme';
 import { useFinancial } from '../../context/FinancialContext';
 import { Card } from '../../components/Card';
-import { CurrencyConfig } from '../../types';
+import { CurrencyConfig, TransactionType } from '../../types';
 import { ExportService } from '../../services/export';
 import { useRouter } from 'expo-router';
+
+const CATEGORY_ICONS = [
+  'cart',
+  'fast-food',
+  'car',
+  'flash',
+  'film',
+  'medkit',
+  'briefcase',
+  'school',
+  'home',
+  'airplane',
+  'fitness',
+  'gift',
+  'cash',
+  'pricetag',
+];
+
+const CATEGORY_COLORS = [
+  '#10B981',
+  '#3B82F6',
+  '#8B5CF6',
+  '#EC4899',
+  '#F59E0B',
+  '#06B6D4',
+  '#F43F5E',
+  '#14B8A6',
+];
 
 export default function SettingsScreen() {
   const router = useRouter();
   const {
     accounts,
     categories,
+    goals,
+    holdings,
+    rules,
+    addRule,
+    deleteRule,
+    addCategory,
     settings,
     updateSettings,
     resetDemoData,
@@ -35,9 +69,23 @@ export default function SettingsScreen() {
     recurringItems,
   } = useFinancial();
 
+  // Modals state
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [currencySearchQuery, setCurrencySearchQuery] = useState('');
   const [exporting, setExporting] = useState(false);
+
+  // Rule Modal State
+  const [ruleModalVisible, setRuleModalVisible] = useState(false);
+  const [ruleKeyword, setRuleKeyword] = useState('');
+  const [ruleCategoryId, setRuleCategoryId] = useState(categories[0]?.id || '');
+  const [ruleTag, setRuleTag] = useState('');
+
+  // Category Modal State
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [catName, setCatName] = useState('');
+  const [catType, setCatType] = useState<TransactionType>('expense');
+  const [catColor, setCatColor] = useState(CATEGORY_COLORS[0]);
+  const [catIcon, setCatIcon] = useState(CATEGORY_ICONS[0]);
 
   // Filter currencies by search query
   const filteredCurrencies = useMemo(() => {
@@ -87,6 +135,57 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleSaveRule = async () => {
+    if (!ruleKeyword.trim()) {
+      Alert.alert('Keyword Required', 'Please enter a keyword to match (e.g. uber, netflix).');
+      return;
+    }
+    if (!ruleCategoryId) {
+      Alert.alert('Category Required', 'Please select a destination category.');
+      return;
+    }
+
+    await addRule({
+      keyword: ruleKeyword.trim(),
+      categoryId: ruleCategoryId,
+      tag: ruleTag.trim() ? (ruleTag.startsWith('#') ? ruleTag.trim() : `#${ruleTag.trim()}`) : undefined,
+    });
+
+    setRuleModalVisible(false);
+    setRuleKeyword('');
+    setRuleTag('');
+    Alert.alert('Rule Saved', 'New auto-categorization rule added successfully!');
+  };
+
+  const handleDeleteRule = (id: string, keyword: string) => {
+    Alert.alert(
+      'Delete Rule',
+      `Delete automation rule for "${keyword}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteRule(id) },
+      ]
+    );
+  };
+
+  const handleSaveCategory = async () => {
+    if (!catName.trim()) {
+      Alert.alert('Name Required', 'Please enter a name for the category.');
+      return;
+    }
+
+    await addCategory({
+      name: catName.trim(),
+      type: catType,
+      color: catColor,
+      icon: catIcon,
+    });
+
+    setCategoryModalVisible(false);
+    setCatName('');
+    Alert.alert('Category Created', `Custom category "${catName.trim()}" added!`);
+  };
+
   const handleExportCSV = async () => {
     try {
       setExporting(true);
@@ -112,6 +211,9 @@ export default function SettingsScreen() {
         accounts,
         budgets,
         recurringItems,
+        goals,
+        holdings,
+        rules,
         settings,
         exportedAt: new Date().toISOString(),
       });
@@ -125,7 +227,7 @@ export default function SettingsScreen() {
   const handleResetDemo = () => {
     Alert.alert(
       'Load Demo Data',
-      'This will populate your app with sample transactions, budgets, and bills in LKR (Rs.) for easy testing. Proceed?',
+      'This will populate your app with rich sample transactions, accounts, investments, and goals in LKR (Rs.) for testing. Proceed?',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Load Demo Data', onPress: () => resetDemoData() },
@@ -136,7 +238,7 @@ export default function SettingsScreen() {
   const handleClearAll = () => {
     Alert.alert(
       'Clear All Records',
-      'This will erase all transaction history, budgets, and scheduled bills. Are you sure?',
+      'This will erase all transaction history, budgets, investments, goals, and scheduled bills. Are you sure?',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Clear All', style: 'destructive', onPress: () => clearAllData() },
@@ -153,7 +255,7 @@ export default function SettingsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Accounts & Settings</Text>
-          <Text style={styles.subtitle}>Preferences & financial accounts</Text>
+          <Text style={styles.subtitle}>Monarch wealth preferences & automation</Text>
         </View>
 
         {/* Accounts / Wallets Section */}
@@ -193,7 +295,8 @@ export default function SettingsScreen() {
                       <Ionicons name="pencil" size={12} color={COLORS.textMuted} />
                     </View>
                     <Text style={styles.accType}>
-                      {acc.type.toUpperCase()} ACCOUNT
+                      {acc.type.toUpperCase()}{' '}
+                      {acc.isLiability ? '• LIABILITY' : 'ACCOUNT'}
                     </Text>
                   </View>
                   <Text
@@ -208,6 +311,116 @@ export default function SettingsScreen() {
               </Card>
             </Pressable>
           ))}
+        </View>
+
+        {/* Automation & Rules Section (Monarch Rules Engine) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Rules & Automation ({rules.length})</Text>
+            <Pressable
+              style={styles.addAccountBtn}
+              onPress={() => setRuleModalVisible(true)}
+              accessibilityRole="button"
+            >
+              <Ionicons name="add" size={16} color="#FFF" />
+              <Text style={styles.addAccountBtnText}>New Rule</Text>
+            </Pressable>
+          </View>
+
+          {rules.length === 0 ? (
+            <Card style={styles.emptyCard}>
+              <Ionicons name="flash-outline" size={32} color={COLORS.textMuted} />
+              <Text style={styles.emptyTitle}>No automation rules yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Auto-assign categories and tags based on transaction keywords (e.g. &apos;uber&apos; → Transport).
+              </Text>
+              <Pressable
+                style={styles.emptyActionBtn}
+                onPress={() => setRuleModalVisible(true)}
+              >
+                <Text style={styles.emptyActionBtnText}>Create Automation Rule</Text>
+              </Pressable>
+            </Card>
+          ) : (
+            <Card style={styles.rulesListCard}>
+              {rules.map((rule, idx) => {
+                const targetCat = categories.find((c) => c.id === rule.categoryId);
+                const isLast = idx === rules.length - 1;
+                return (
+                  <View
+                    key={rule.id}
+                    style={[styles.ruleRow, !isLast && styles.ruleRowBorder]}
+                  >
+                    <View style={styles.ruleLeft}>
+                      <View style={styles.keywordBadge}>
+                        <Text style={styles.keywordText}>{rule.keyword}</Text>
+                      </View>
+                      <Ionicons name="arrow-forward" size={14} color={COLORS.textMuted} />
+                      {targetCat && (
+                        <View
+                          style={[
+                            styles.catBadge,
+                            { backgroundColor: targetCat.color + '20' },
+                          ]}
+                        >
+                          <Text style={[styles.catBadgeText, { color: targetCat.color }]}>
+                            {targetCat.name}
+                          </Text>
+                        </View>
+                      )}
+                      {rule.tag && (
+                        <View style={styles.tagBadge}>
+                          <Text style={styles.tagBadgeText}>{rule.tag}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <Pressable
+                      onPress={() => handleDeleteRule(rule.id, rule.keyword)}
+                      hitSlop={8}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={COLORS.expense} />
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </Card>
+          )}
+        </View>
+
+        {/* Custom Categories Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Categories ({categories.length})</Text>
+            <Pressable
+              style={styles.addAccountBtn}
+              onPress={() => setCategoryModalVisible(true)}
+              accessibilityRole="button"
+            >
+              <Ionicons name="add" size={16} color="#FFF" />
+              <Text style={styles.addAccountBtnText}>New Category</Text>
+            </Pressable>
+          </View>
+
+          <Card style={styles.catGridCard}>
+            <View style={styles.catGrid}>
+              {categories.map((c) => (
+                <View key={c.id} style={styles.catItemChip}>
+                  <View style={[styles.catChipIcon, { backgroundColor: c.color + '20' }]}>
+                    <Ionicons name={(c.icon as any) || 'pricetag'} size={14} color={c.color} />
+                  </View>
+                  <Text style={styles.catChipText} numberOfLines={1}>
+                    {c.name}
+                  </Text>
+                  {c.isCustom && (
+                    <View style={styles.customBadge}>
+                      <Text style={styles.customBadgeText}>Custom</Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+          </Card>
         </View>
 
         {/* Preferences Section */}
@@ -328,6 +541,10 @@ export default function SettingsScreen() {
           <Card style={styles.statsCard}>
             <View style={styles.statGrid}>
               <View style={styles.statBox}>
+                <Text style={styles.statNum}>{accounts.length}</Text>
+                <Text style={styles.statDesc}>Accounts</Text>
+              </View>
+              <View style={styles.statBox}>
                 <Text style={styles.statNum}>{transactions.length}</Text>
                 <Text style={styles.statDesc}>Transactions</Text>
               </View>
@@ -338,6 +555,14 @@ export default function SettingsScreen() {
               <View style={styles.statBox}>
                 <Text style={styles.statNum}>{recurringItems.length}</Text>
                 <Text style={styles.statDesc}>Recurring</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statNum}>{goals.length}</Text>
+                <Text style={styles.statDesc}>Goals</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statNum}>{holdings.length}</Text>
+                <Text style={styles.statDesc}>Holdings</Text>
               </View>
             </View>
           </Card>
@@ -354,7 +579,7 @@ export default function SettingsScreen() {
                 </View>
                 <View>
                   <Text style={styles.menuTitle}>Load Sample Demo Data</Text>
-                  <Text style={styles.menuSubtitle}>Restore rich sample data in LKR (Rs.)</Text>
+                  <Text style={styles.menuSubtitle}>Restore sample Monarch records in LKR (Rs.)</Text>
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
@@ -369,9 +594,9 @@ export default function SettingsScreen() {
                 </View>
                 <View>
                   <Text style={[styles.menuTitle, { color: COLORS.expense }]}>
-                    Clear All Transactions
+                    Clear All Records
                   </Text>
-                  <Text style={styles.menuSubtitle}>Reset to empty state</Text>
+                  <Text style={styles.menuSubtitle}>Reset to fresh clean install</Text>
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
@@ -381,8 +606,8 @@ export default function SettingsScreen() {
 
         {/* Footer Note */}
         <View style={styles.footerInfo}>
-          <Text style={styles.versionText}>Money Management App v1.1.0</Text>
-          <Text style={styles.subVersionText}>Offline-First • Cross-Platform Mobile</Text>
+          <Text style={styles.versionText}>Money Management App v1.2.0</Text>
+          <Text style={styles.subVersionText}>Monarch Wealth Edition • Offline-First</Text>
         </View>
       </ScrollView>
 
@@ -466,14 +691,188 @@ export default function SettingsScreen() {
                   </Pressable>
                 );
               })}
-              {filteredCurrencies.length === 0 && (
-                <View style={{ padding: SPACING.lg, alignItems: 'center' }}>
-                  <Text style={{ color: COLORS.textMuted, fontSize: 13 }}>
-                    No currencies matching "{currencySearchQuery}"
-                  </Text>
-                </View>
-              )}
             </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Add Automation Rule Modal */}
+      <Modal
+        visible={ruleModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRuleModalVisible(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setRuleModalVisible(false)}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>New Automation Rule</Text>
+              <Pressable onPress={() => setRuleModalVisible(false)} hitSlop={10}>
+                <Ionicons name="close" size={20} color={COLORS.textSecondary} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.fieldLabel}>When Note / Payee Contains</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. uber, netflix, salary, keells"
+              placeholderTextColor={COLORS.textMuted}
+              value={ruleKeyword}
+              onChangeText={setRuleKeyword}
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.fieldLabel}>Assign to Category</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: SPACING.sm }}
+            >
+              {categories.map((c) => {
+                const isSelected = ruleCategoryId === c.id;
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={[
+                      styles.ruleCatChip,
+                      isSelected && {
+                        backgroundColor: c.color,
+                        borderColor: c.color,
+                      },
+                    ]}
+                    onPress={() => setRuleCategoryId(c.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.ruleCatChipText,
+                        isSelected && { color: '#FFF', fontWeight: '700' },
+                      ]}
+                    >
+                      {c.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={styles.fieldLabel}>Auto Tag (Optional)</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. #commute, #tax-deductible, #work"
+              placeholderTextColor={COLORS.textMuted}
+              value={ruleTag}
+              onChangeText={setRuleTag}
+              autoCapitalize="none"
+            />
+
+            <Pressable style={styles.primaryModalBtn} onPress={handleSaveRule}>
+              <Ionicons name="checkmark-circle" size={18} color="#FFF" />
+              <Text style={styles.primaryModalBtnText}>Save Rule</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Add Custom Category Modal */}
+      <Modal
+        visible={categoryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCategoryModalVisible(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setCategoryModalVisible(false)}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>New Custom Category</Text>
+              <Pressable onPress={() => setCategoryModalVisible(false)} hitSlop={10}>
+                <Ionicons name="close" size={20} color={COLORS.textSecondary} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.fieldLabel}>Category Name</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. Pet Care, Software, Gym"
+              placeholderTextColor={COLORS.textMuted}
+              value={catName}
+              onChangeText={setCatName}
+            />
+
+            <Text style={styles.fieldLabel}>Type</Text>
+            <View style={styles.typeToggleRow}>
+              {(['expense', 'income'] as const).map((t) => (
+                <Pressable
+                  key={t}
+                  style={[
+                    styles.typeToggleBtn,
+                    catType === t && {
+                      backgroundColor: t === 'expense' ? COLORS.expense : COLORS.income,
+                    },
+                  ]}
+                  onPress={() => setCatType(t)}
+                >
+                  <Text
+                    style={[
+                      styles.typeToggleText,
+                      catType === t && { color: '#FFF', fontWeight: '700' },
+                    ]}
+                  >
+                    {t.toUpperCase()}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.fieldLabel}>Category Icon</Text>
+            <View style={styles.iconSelectionRow}>
+              {CATEGORY_ICONS.map((ic) => (
+                <Pressable
+                  key={ic}
+                  style={[
+                    styles.iconOptionChip,
+                    catIcon === ic && {
+                      backgroundColor: catColor + '25',
+                      borderColor: catColor,
+                    },
+                  ]}
+                  onPress={() => setCatIcon(ic)}
+                >
+                  <Ionicons
+                    name={ic as any}
+                    size={18}
+                    color={catIcon === ic ? catColor : COLORS.textMuted}
+                  />
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.fieldLabel}>Accent Color</Text>
+            <View style={styles.colorSelectionRow}>
+              {CATEGORY_COLORS.map((c) => (
+                <Pressable
+                  key={c}
+                  style={[
+                    styles.colorChip,
+                    { backgroundColor: c },
+                    catColor === c && styles.colorChipSelected,
+                  ]}
+                  onPress={() => setCatColor(c)}
+                >
+                  {catColor === c && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                </Pressable>
+              ))}
+            </View>
+
+            <Pressable style={styles.primaryModalBtn} onPress={handleSaveCategory}>
+              <Ionicons name="checkmark-circle" size={18} color="#FFF" />
+              <Text style={styles.primaryModalBtnText}>Create Category</Text>
+            </Pressable>
           </View>
         </Pressable>
       </Modal>
@@ -513,6 +912,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.sm,
   },
+  sectionTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '700',
+  },
   addAccountBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -527,22 +931,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  sectionTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 17,
-    fontWeight: '700',
-  },
   accountCard: {
-    marginBottom: SPACING.sm,
     padding: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   accountRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   accIconWrap: {
-    width: 44,
-    height: 44,
+    width: 42,
+    height: 42,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -558,12 +957,109 @@ const styles = StyleSheet.create({
   },
   accType: {
     color: COLORS.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 11,
     marginTop: 2,
+    letterSpacing: 0.5,
   },
   accBalance: {
     fontSize: 16,
+    fontWeight: '700',
+  },
+  rulesListCard: {
+    padding: 0,
+    overflow: 'hidden',
+  },
+  ruleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: SPACING.md,
+  },
+  ruleRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  ruleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    flex: 1,
+  },
+  keywordBadge: {
+    backgroundColor: COLORS.cardElevated,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  keywordText: {
+    color: COLORS.primaryLight,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  catBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
+  },
+  catBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  tagBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+  },
+  tagBadgeText: {
+    color: COLORS.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  catGridCard: {
+    padding: SPACING.md,
+  },
+  catGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  catItemChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.cardElevated,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 6,
+  },
+  catChipIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catChipText: {
+    color: COLORS.textPrimary,
+    fontSize: 12,
+    fontWeight: '500',
+    maxWidth: 100,
+  },
+  customBadge: {
+    backgroundColor: COLORS.primaryGlow,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: RADIUS.xs,
+  },
+  customBadgeText: {
+    color: COLORS.primaryLight,
+    fontSize: 9,
     fontWeight: '700',
   },
   menuCard: {
@@ -580,7 +1076,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
-    flex: 1,
   },
   menuIconWrap: {
     width: 36,
@@ -591,7 +1086,7 @@ const styles = StyleSheet.create({
   },
   menuTitle: {
     color: COLORS.textPrimary,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
   menuSubtitle: {
@@ -612,31 +1107,41 @@ const styles = StyleSheet.create({
   menuDivider: {
     height: 1,
     backgroundColor: COLORS.border,
+    marginLeft: 56,
   },
   statsCard: {
     padding: SPACING.md,
   },
   statGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
   },
   statBox: {
+    flexBasis: '30%',
+    flexGrow: 1,
     alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.cardElevated,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   statNum: {
-    color: COLORS.textPrimary,
-    fontSize: 20,
+    color: COLORS.primaryLight,
+    fontSize: 18,
     fontWeight: '800',
   },
   statDesc: {
     color: COLORS.textMuted,
-    fontSize: 11,
+    fontSize: 10,
+    fontWeight: '600',
     marginTop: 2,
+    textTransform: 'uppercase',
   },
   footerInfo: {
     alignItems: 'center',
-    marginTop: SPACING.md,
-    marginBottom: SPACING.lg,
+    paddingVertical: SPACING.lg,
   },
   versionText: {
     color: COLORS.textMuted,
@@ -645,7 +1150,8 @@ const styles = StyleSheet.create({
   },
   subVersionText: {
     color: COLORS.textMuted,
-    fontSize: 10,
+    fontSize: 11,
+    opacity: 0.6,
     marginTop: 2,
   },
   modalOverlay: {
@@ -672,6 +1178,104 @@ const styles = StyleSheet.create({
   modalTitle: {
     color: COLORS.textPrimary,
     fontSize: 18,
+    fontWeight: '700',
+  },
+  fieldLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: SPACING.xs,
+    marginTop: SPACING.sm,
+  },
+  textInput: {
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    marginBottom: SPACING.xs,
+  },
+  ruleCatChip: {
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    marginRight: 6,
+  },
+  ruleCatChipText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+  },
+  typeToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: SPACING.xs,
+  },
+  typeToggleBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.card,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  typeToggleText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  iconSelectionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: SPACING.xs,
+  },
+  iconOptionChip: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  colorSelectionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: SPACING.md,
+  },
+  colorChip: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  colorChipSelected: {
+    borderWidth: 2.5,
+    borderColor: '#FFF',
+  },
+  primaryModalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    borderRadius: RADIUS.md,
+    marginTop: SPACING.sm,
+  },
+  primaryModalBtnText: {
+    color: '#FFF',
+    fontSize: 14,
     fontWeight: '700',
   },
   searchBar: {
@@ -731,5 +1335,33 @@ const styles = StyleSheet.create({
   currencyCode: {
     color: COLORS.textMuted,
     fontSize: 12,
+  },
+  emptyCard: {
+    alignItems: 'center',
+    padding: SPACING.lg,
+  },
+  emptyTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+    marginTop: SPACING.sm,
+  },
+  emptySubtitle: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: SPACING.md,
+  },
+  emptyActionBtn: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.md,
+  },
+  emptyActionBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
