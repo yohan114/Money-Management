@@ -37,9 +37,8 @@ export default function TransactionModal() {
     typeCategories[0]?.id || ''
   );
 
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(
-    accounts[0]?.id || ''
-  );
+  const initialAccountId = (params.accountId as string) || accounts[0]?.id || '';
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(initialAccountId);
 
   const handleTypeChange = (newType: TransactionType) => {
     setType(newType);

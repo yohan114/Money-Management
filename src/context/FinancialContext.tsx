@@ -47,6 +47,9 @@ interface FinancialContextValue {
   settings: UserSettings;
   selectedMonth: string; // YYYY-MM
   setSelectedMonth: (month: string) => void;
+  selectedAccountId: string | 'all';
+  setSelectedAccountId: (id: string | 'all') => void;
+  selectedAccount?: Account;
 
   // Actions
   addTransaction: (data: Omit<Transaction, 'id'>) => Promise<void>;
@@ -127,6 +130,12 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   const [selectedMonth, setSelectedMonth] = useState<string>(currentYearMonth);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | 'all'>('all');
+
+  const selectedAccount = useMemo(() => {
+    if (selectedAccountId === 'all') return undefined;
+    return accounts.find((a) => a.id === selectedAccountId);
+  }, [accounts, selectedAccountId]);
 
   // Load data on startup
   const loadAllData = useCallback(async () => {
@@ -634,10 +643,12 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return investAccs + holdingsVal;
   }, [accounts, holdings]);
 
-  // Selected Month Transactions
+  // Selected Month Transactions (respecting selectedAccountId)
   const selectedMonthTransactions = useMemo(() => {
-    return transactions.filter((tx) => tx.date.startsWith(selectedMonth));
-  }, [transactions, selectedMonth]);
+    return transactions
+      .filter((tx) => tx.date.startsWith(selectedMonth))
+      .filter((tx) => selectedAccountId === 'all' || tx.accountId === selectedAccountId);
+  }, [transactions, selectedMonth, selectedAccountId]);
 
   // Monthly Income and Expense
   const monthlyIncome = useMemo(() => {
@@ -697,11 +708,12 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           (tx) =>
             tx.categoryId === categoryId &&
             tx.type === 'expense' &&
-            (month === 'global' || tx.date.startsWith(month))
+            (month === 'global' || tx.date.startsWith(month)) &&
+            (selectedAccountId === 'all' || tx.accountId === selectedAccountId)
         )
         .reduce((sum, tx) => sum + tx.amount, 0);
     },
-    [transactions]
+    [transactions, selectedAccountId]
   );
 
   // Cash flow history for past 6 months
@@ -717,7 +729,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const label = monthNames[d.getMonth()];
 
-      const monthTxs = transactions.filter((t) => t.date.startsWith(monthKey));
+      const monthTxs = transactions
+        .filter((t) => t.date.startsWith(monthKey))
+        .filter((t) => selectedAccountId === 'all' || t.accountId === selectedAccountId);
       const inc = monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
       const exp = monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
 
@@ -730,7 +744,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
 
     return history;
-  }, [transactions]);
+  }, [transactions, selectedAccountId]);
 
   // Upcoming bills
   const upcomingBills = useMemo(() => {
@@ -739,18 +753,19 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     return recurringItems
       .filter((item) => item.active && item.type === 'expense')
+      .filter((item) => selectedAccountId === 'all' || item.accountId === selectedAccountId)
       .sort((a, b) => {
         const distA = (a.dueDay - currentDay + 31) % 31;
         const distB = (b.dueDay - currentDay + 31) % 31;
         return distA - distB;
       });
-  }, [recurringItems]);
+  }, [recurringItems, selectedAccountId]);
 
   // Monarch Cash Flow Forecasting (30 days predictive timeline)
   const cashFlowForecast = useMemo(() => {
     const forecast: DayForecast[] = [];
     const today = new Date();
-    let rollingBalance = totalAssets;
+    let rollingBalance = selectedAccountId === 'all' ? totalAssets : (selectedAccount?.balance ?? 0);
 
     for (let i = 1; i <= 30; i++) {
       const targetDate = new Date();
@@ -763,17 +778,19 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const events: string[] = [];
 
       // Check recurring items due on this day of month
-      recurringItems.forEach((r) => {
-        if (r.active && r.dueDay === dayOfMonth) {
-          if (r.type === 'income') {
-            incoming += r.amount;
-            events.push(`Income: ${r.title}`);
-          } else {
-            outgoing += r.amount;
-            events.push(`Bill: ${r.title}`);
+      recurringItems
+        .filter((r) => selectedAccountId === 'all' || r.accountId === selectedAccountId)
+        .forEach((r) => {
+          if (r.active && r.dueDay === dayOfMonth) {
+            if (r.type === 'income') {
+              incoming += r.amount;
+              events.push(`Income: ${r.title}`);
+            } else {
+              outgoing += r.amount;
+              events.push(`Bill: ${r.title}`);
+            }
           }
-        }
-      });
+        });
 
       rollingBalance = rollingBalance + incoming - outgoing;
 
@@ -788,7 +805,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
 
     return forecast;
-  }, [totalAssets, recurringItems]);
+  }, [selectedAccountId, selectedAccount, totalAssets, recurringItems]);
 
   const value = useMemo(
     () => ({
@@ -804,6 +821,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       settings,
       selectedMonth,
       setSelectedMonth,
+      selectedAccountId,
+      setSelectedAccountId,
+      selectedAccount,
       addTransaction,
       updateTransaction,
       deleteTransaction,
@@ -860,6 +880,8 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       rules,
       settings,
       selectedMonth,
+      selectedAccountId,
+      selectedAccount,
       addTransaction,
       updateTransaction,
       deleteTransaction,

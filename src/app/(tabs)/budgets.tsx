@@ -28,6 +28,9 @@ export default function BudgetsScreen() {
     deleteGoal,
     contributeToGoal,
     accounts,
+    selectedAccountId,
+    setSelectedAccountId,
+    selectedAccount,
     selectedMonth,
     getCategorySpentForMonth,
     formatAmount,
@@ -177,7 +180,9 @@ export default function BudgetsScreen() {
             </Text>
             <Text style={styles.subtitle}>
               {activeTab === 'budgets'
-                ? 'Track spending limits & caps'
+                ? selectedAccount
+                  ? `Track spending • ${selectedAccount.name}`
+                  : 'Track spending limits & caps'
                 : 'Monarch target planning & milestones'}
             </Text>
           </View>
@@ -202,6 +207,68 @@ export default function BudgetsScreen() {
         {/* TAB 1: MONTHLY BUDGETS VIEW */}
         {activeTab === 'budgets' && (
           <>
+            {/* Multi-Account Isolation Switcher (Salary vs Channery vs Company) */}
+            <View style={styles.accountSwitcherContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.accountSwitcherContent}
+              >
+                <Pressable
+                  style={[
+                    styles.accountTabChip,
+                    selectedAccountId === 'all' && styles.accountTabChipActive,
+                  ]}
+                  onPress={() => setSelectedAccountId('all')}
+                >
+                  <Ionicons
+                    name="globe-outline"
+                    size={14}
+                    color={selectedAccountId === 'all' ? '#FFF' : COLORS.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.accountTabChipText,
+                      selectedAccountId === 'all' && styles.accountTabChipTextActive,
+                    ]}
+                  >
+                    All Accounts
+                  </Text>
+                </Pressable>
+
+                {accounts.map((acc) => {
+                  const isSelected = selectedAccountId === acc.id;
+                  return (
+                    <Pressable
+                      key={acc.id}
+                      style={[
+                        styles.accountTabChip,
+                        isSelected && {
+                          backgroundColor: acc.color + '25',
+                          borderColor: acc.color,
+                        },
+                      ]}
+                      onPress={() => setSelectedAccountId(isSelected ? 'all' : acc.id)}
+                    >
+                      <Ionicons
+                        name={(acc.icon as any) || 'wallet'}
+                        size={14}
+                        color={isSelected ? acc.color : COLORS.textMuted}
+                      />
+                      <Text
+                        style={[
+                          styles.accountTabChipText,
+                          isSelected && { color: acc.color, fontWeight: '700' },
+                        ]}
+                      >
+                        {acc.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
             {/* Overall Budget Summary Card */}
             <Card elevated highlight style={styles.summaryCard}>
               <View style={styles.summaryHeader}>
@@ -625,6 +692,37 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 13,
     marginTop: 2,
+  },
+  accountSwitcherContainer: {
+    marginBottom: SPACING.md,
+  },
+  accountSwitcherContent: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  accountTabChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.full,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 6,
+  },
+  accountTabChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  accountTabChipText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  accountTabChipTextActive: {
+    color: '#FFF',
+    fontWeight: '700',
   },
   addBtn: {
     flexDirection: 'row',

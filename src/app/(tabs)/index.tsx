@@ -32,6 +32,10 @@ const ASSET_CLASS_META: Record<
 export default function DashboardScreen() {
   const router = useRouter();
   const {
+    accounts,
+    selectedAccountId,
+    setSelectedAccountId,
+    selectedAccount,
     totalNetWorth,
     totalAssets,
     totalLiabilities,
@@ -71,12 +75,13 @@ export default function DashboardScreen() {
     year: 'numeric',
   });
 
-  // Filtered recent transactions for selected month
+  // Filtered recent transactions for selected month and account
   const filteredTransactions = useMemo(() => {
     return transactions
       .filter((tx) => tx.date.startsWith(selectedMonth))
+      .filter((tx) => (selectedAccountId === 'all' ? true : tx.accountId === selectedAccountId))
       .filter((tx) => (filterType === 'all' ? true : tx.type === filterType));
-  }, [transactions, selectedMonth, filterType]);
+  }, [transactions, selectedMonth, selectedAccountId, filterType]);
 
   const handleDelete = (id: string) => {
     Alert.alert(
@@ -129,10 +134,91 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
 
-        {/* Hero Balance Sheet Card (Monarch Net Worth, Assets & Liabilities) */}
+        {/* Multi-Account Isolation Switcher (Salary vs Channery vs Company) */}
+        <View style={styles.accountSwitcherContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.accountSwitcherContent}
+          >
+            <Pressable
+              style={[
+                styles.accountTabChip,
+                selectedAccountId === 'all' && styles.accountTabChipActive,
+              ]}
+              onPress={() => setSelectedAccountId('all')}
+            >
+              <Ionicons
+                name="globe-outline"
+                size={14}
+                color={selectedAccountId === 'all' ? '#FFF' : COLORS.textMuted}
+              />
+              <Text
+                style={[
+                  styles.accountTabChipText,
+                  selectedAccountId === 'all' && styles.accountTabChipTextActive,
+                ]}
+              >
+                All Accounts
+              </Text>
+            </Pressable>
+
+            {accounts.map((acc) => {
+              const isSelected = selectedAccountId === acc.id;
+              return (
+                <Pressable
+                  key={acc.id}
+                  style={[
+                    styles.accountTabChip,
+                    isSelected && {
+                      backgroundColor: acc.color + '25',
+                      borderColor: acc.color,
+                    },
+                  ]}
+                  onPress={() => setSelectedAccountId(isSelected ? 'all' : acc.id)}
+                >
+                  <Ionicons
+                    name={(acc.icon as any) || 'wallet'}
+                    size={14}
+                    color={isSelected ? acc.color : COLORS.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.accountTabChipText,
+                      isSelected && { color: acc.color, fontWeight: '700' },
+                    ]}
+                  >
+                    {acc.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.accountTabChipBalance,
+                      isSelected && { color: acc.color, fontWeight: '700' },
+                    ]}
+                  >
+                    {formatAmount(acc.balance)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Hero Balance Sheet Card (Isolated for selected account or Net Worth for all) */}
         <Card elevated highlight style={styles.heroCard}>
           <View style={styles.balanceHeader}>
-            <Text style={styles.balanceLabel}>Total Net Worth</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {selectedAccount && (
+                <Ionicons
+                  name={(selectedAccount.icon as any) || 'wallet'}
+                  size={16}
+                  color={selectedAccount.color}
+                />
+              )}
+              <Text style={styles.balanceLabel}>
+                {selectedAccount ? `${selectedAccount.name} Balance` : 'Total Net Worth'}
+              </Text>
+            </View>
             <Pressable
               onPress={() => setHideBalance(!hideBalance)}
               hitSlop={10}
@@ -147,38 +233,54 @@ export default function DashboardScreen() {
           </View>
 
           <Text style={styles.balanceAmount}>
-            {hideBalance ? '••••••••' : formatAmount(totalNetWorth)}
+            {hideBalance
+              ? '••••••••'
+              : formatAmount(selectedAccount ? selectedAccount.balance : totalNetWorth)}
           </Text>
 
-          {/* Monarch Balance Sheet: Assets vs Liabilities */}
-          <View style={styles.balanceSheetRow}>
-            <View style={styles.balanceSheetCol}>
-              <Text style={styles.balanceSheetSub}>Total Assets</Text>
-              <Text style={[styles.balanceSheetVal, { color: COLORS.income }]}>
-                {hideBalance ? '••••' : formatAmount(totalAssets)}
-              </Text>
+          {/* If All Accounts selected: show Monarch Balance Sheet (Assets vs Liabilities) */}
+          {!selectedAccount ? (
+            <View style={styles.balanceSheetRow}>
+              <View style={styles.balanceSheetCol}>
+                <Text style={styles.balanceSheetSub}>Total Assets</Text>
+                <Text style={[styles.balanceSheetVal, { color: COLORS.income }]}>
+                  {hideBalance ? '••••' : formatAmount(totalAssets)}
+                </Text>
+              </View>
+
+              <View style={styles.balanceSheetDivider} />
+
+              <View style={styles.balanceSheetCol}>
+                <Text style={styles.balanceSheetSub}>Liabilities / Debt</Text>
+                <Text style={[styles.balanceSheetVal, { color: COLORS.expense }]}>
+                  {hideBalance ? '••••' : formatAmount(totalLiabilities)}
+                </Text>
+              </View>
+
+              <View style={styles.balanceSheetDivider} />
+
+              <View style={styles.balanceSheetCol}>
+                <Text style={styles.balanceSheetSub}>Debt Ratio</Text>
+                <Text style={[styles.balanceSheetVal, { color: COLORS.primaryLight }]}>
+                  {debtToAssetRatio}%
+                </Text>
+              </View>
             </View>
-
-            <View style={styles.balanceSheetDivider} />
-
-            <View style={styles.balanceSheetCol}>
-              <Text style={styles.balanceSheetSub}>Liabilities / Debt</Text>
-              <Text style={[styles.balanceSheetVal, { color: COLORS.expense }]}>
-                {hideBalance ? '••••' : formatAmount(totalLiabilities)}
+          ) : (
+            <View style={[styles.activeAccountBanner, { borderColor: selectedAccount.color + '40' }]}>
+              <Text style={styles.activeAccountBannerText}>
+                Isolating transactions for{' '}
+                <Text style={{ color: selectedAccount.color, fontWeight: '700' }}>
+                  {selectedAccount.name}
+                </Text>
               </Text>
+              <Pressable onPress={() => setSelectedAccountId('all')} hitSlop={6}>
+                <Text style={styles.resetAccountLink}>View All</Text>
+              </Pressable>
             </View>
+          )}
 
-            <View style={styles.balanceSheetDivider} />
-
-            <View style={styles.balanceSheetCol}>
-              <Text style={styles.balanceSheetSub}>Debt Ratio</Text>
-              <Text style={[styles.balanceSheetVal, { color: COLORS.primaryLight }]}>
-                {debtToAssetRatio}%
-              </Text>
-            </View>
-          </View>
-
-          {/* Monthly Income / Expense Split */}
+          {/* Monthly Income / Expense Split for active account scope */}
           <View style={styles.cashFlowRow}>
             {/* Income */}
             <View style={styles.cashFlowItem}>
@@ -186,7 +288,9 @@ export default function DashboardScreen() {
                 <Ionicons name="arrow-down" size={14} color={COLORS.income} />
               </View>
               <View>
-                <Text style={styles.cashFlowSub}>Income</Text>
+                <Text style={styles.cashFlowSub}>
+                  {selectedAccount ? `${selectedAccount.name.split(' ')[0]} Inflow` : 'Income'}
+                </Text>
                 <Text style={[styles.cashFlowValue, { color: COLORS.income }]}>
                   {hideBalance ? '••••' : formatAmount(monthlyIncome)}
                 </Text>
@@ -201,7 +305,9 @@ export default function DashboardScreen() {
                 <Ionicons name="arrow-up" size={14} color={COLORS.expense} />
               </View>
               <View>
-                <Text style={styles.cashFlowSub}>Expense</Text>
+                <Text style={styles.cashFlowSub}>
+                  {selectedAccount ? `${selectedAccount.name.split(' ')[0]} Outflow` : 'Expense'}
+                </Text>
                 <Text style={[styles.cashFlowValue, { color: COLORS.expense }]}>
                   {hideBalance ? '••••' : formatAmount(monthlyExpense)}
                 </Text>
@@ -223,7 +329,7 @@ export default function DashboardScreen() {
           </View>
         </Card>
 
-        {/* Quick Action Buttons */}
+        {/* Quick Action Buttons with Account Pre-fill */}
         <View style={styles.actionGrid}>
           <Pressable
             style={({ pressed }) => [
@@ -231,12 +337,22 @@ export default function DashboardScreen() {
               { backgroundColor: COLORS.expense },
               pressed && styles.actionBtnPressed,
             ]}
-            onPress={() => router.push({ pathname: '/modal/transaction', params: { type: 'expense' } })}
+            onPress={() =>
+              router.push({
+                pathname: '/modal/transaction',
+                params: {
+                  type: 'expense',
+                  ...(selectedAccountId !== 'all' ? { accountId: selectedAccountId } : {}),
+                },
+              })
+            }
             accessibilityRole="button"
             accessibilityLabel="Add Expense"
           >
             <Ionicons name="remove-circle" size={18} color="#FFF" />
-            <Text style={styles.actionBtnText}>Expense</Text>
+            <Text style={styles.actionBtnText}>
+              {selectedAccount ? `Add ${selectedAccount.name.split(' ')[0]} Exp` : 'Expense'}
+            </Text>
           </Pressable>
 
           <Pressable
@@ -245,12 +361,22 @@ export default function DashboardScreen() {
               { backgroundColor: COLORS.income },
               pressed && styles.actionBtnPressed,
             ]}
-            onPress={() => router.push({ pathname: '/modal/transaction', params: { type: 'income' } })}
+            onPress={() =>
+              router.push({
+                pathname: '/modal/transaction',
+                params: {
+                  type: 'income',
+                  ...(selectedAccountId !== 'all' ? { accountId: selectedAccountId } : {}),
+                },
+              })
+            }
             accessibilityRole="button"
             accessibilityLabel="Add Income"
           >
             <Ionicons name="add-circle" size={18} color="#FFF" />
-            <Text style={styles.actionBtnText}>Income</Text>
+            <Text style={styles.actionBtnText}>
+              {selectedAccount ? `Add ${selectedAccount.name.split(' ')[0]} Inc` : 'Income'}
+            </Text>
           </Pressable>
 
           <Pressable
@@ -365,7 +491,11 @@ export default function DashboardScreen() {
         {upcomingBills.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Upcoming Bills & Subscriptions</Text>
+              <Text style={styles.sectionTitle}>
+                {selectedAccount
+                  ? `${selectedAccount.name} Bills`
+                  : 'Upcoming Bills & Subscriptions'}
+              </Text>
               <Pressable onPress={() => router.push('/(tabs)/recurring')}>
                 <Text style={styles.seeAllText}>See all ({upcomingBills.length})</Text>
               </Pressable>
@@ -387,7 +517,18 @@ export default function DashboardScreen() {
         {/* Transactions Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Transactions</Text>
+            <View>
+              <Text style={styles.sectionTitle}>
+                {selectedAccount ? `${selectedAccount.name} History` : 'Transactions'}
+              </Text>
+              {selectedAccount && (
+                <Pressable onPress={() => setSelectedAccountId('all')}>
+                  <Text style={styles.filteredScopeLink}>
+                    Filtered by {selectedAccount.name} • View All
+                  </Text>
+                </Pressable>
+              )}
+            </View>
 
             {/* Filter Tabs */}
             <View style={styles.filterPillGroup}>
@@ -413,9 +554,15 @@ export default function DashboardScreen() {
           {filteredTransactions.length === 0 ? (
             <Card style={styles.emptyCard}>
               <Ionicons name="receipt-outline" size={36} color={COLORS.textMuted} />
-              <Text style={styles.emptyTitle}>No transactions recorded</Text>
+              <Text style={styles.emptyTitle}>
+                {selectedAccount
+                  ? `No transactions in ${selectedAccount.name}`
+                  : 'No transactions recorded'}
+              </Text>
               <Text style={styles.emptySubtitle}>
-                Tap the buttons above to log an expense or income for this month.
+                {selectedAccount
+                  ? `Tap the buttons above to log an income or expense directly to ${selectedAccount.name}.`
+                  : 'Tap the buttons above to log an expense or income for this month.'}
               </Text>
             </Card>
           ) : (
@@ -448,7 +595,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   greeting: {
     color: COLORS.textPrimary,
@@ -480,6 +627,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  accountSwitcherContainer: {
+    marginBottom: SPACING.sm,
+  },
+  accountSwitcherContent: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  accountTabChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.full,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 6,
+  },
+  accountTabChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  accountTabChipText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  accountTabChipTextActive: {
+    color: '#FFF',
+    fontWeight: '700',
+  },
+  accountTabChipBalance: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    fontWeight: '500',
+  },
   heroCard: {
     padding: SPACING.lg,
     marginBottom: SPACING.md,
@@ -492,7 +675,7 @@ const styles = StyleSheet.create({
   balanceLabel: {
     color: COLORS.textSecondary,
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -534,6 +717,28 @@ const styles = StyleSheet.create({
   balanceSheetVal: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  activeAccountBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.cardElevated,
+    borderRadius: RADIUS.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginVertical: SPACING.sm,
+    borderWidth: 1,
+  },
+  activeAccountBannerText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    flex: 1,
+  },
+  resetAccountLink: {
+    color: COLORS.primaryLight,
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 8,
   },
   cashFlowRow: {
     flexDirection: 'row',
@@ -645,6 +850,12 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: 17,
     fontWeight: '700',
+  },
+  filteredScopeLink: {
+    color: COLORS.primaryLight,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
   },
   sectionSub: {
     color: COLORS.textMuted,
