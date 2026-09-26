@@ -89,6 +89,14 @@ function AppContent() {
             animation: 'slide_from_bottom',
           }}
         />
+        <Stack.Screen
+          name="modal/account"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
       </Stack>
     </>
   );

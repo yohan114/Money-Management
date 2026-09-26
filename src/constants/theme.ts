@@ -119,8 +119,8 @@ export const DEFAULT_CATEGORIES: Category[] = [
 ];
 
 export const DEFAULT_ACCOUNTS: Account[] = [
-  { id: 'acc-cash', name: 'Cash Wallet', type: 'cash', balance: 35000, icon: 'wallet', color: '#10B981' },
-  { id: 'acc-main-bank', name: 'Commercial Bank Account', type: 'bank', balance: 285000, icon: 'business', color: '#3B82F6' },
-  { id: 'acc-credit-card', name: 'Mastercard / Credit Card', type: 'card', balance: -24500, icon: 'card', color: '#EC4899' },
-  { id: 'acc-savings', name: 'High-Yield Savings / Fixed', type: 'savings', balance: 750000, icon: 'shield-checkmark', color: '#8B5CF6' },
+  { id: 'acc-cash', name: 'Cash Wallet', type: 'cash', balance: 0, icon: 'wallet', color: '#10B981' },
+  { id: 'acc-main-bank', name: 'Bank Account', type: 'bank', balance: 0, icon: 'business', color: '#3B82F6' },
+  { id: 'acc-credit-card', name: 'Credit Card', type: 'card', balance: 0, icon: 'card', color: '#EC4899' },
+  { id: 'acc-savings', name: 'Savings Account', type: 'savings', balance: 0, icon: 'shield-checkmark', color: '#8B5CF6' },
 ];

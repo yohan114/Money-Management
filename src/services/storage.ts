@@ -3,13 +3,13 @@ import { Transaction, Category, Account, Budget, RecurringItem, UserSettings } f
 import { DEFAULT_CATEGORIES, DEFAULT_ACCOUNTS } from '../constants/theme';
 
 const STORAGE_KEYS = {
-  TRANSACTIONS: '@money_management_transactions_v2',
-  CATEGORIES: '@money_management_categories_v2',
-  ACCOUNTS: '@money_management_accounts_v2',
-  BUDGETS: '@money_management_budgets_v2',
-  RECURRING: '@money_management_recurring_v2',
-  SETTINGS: '@money_management_settings_v2',
-  INITIALIZED: '@money_management_initialized_v2',
+  TRANSACTIONS: '@money_management_transactions_v3',
+  CATEGORIES: '@money_management_categories_v3',
+  ACCOUNTS: '@money_management_accounts_v3',
+  BUDGETS: '@money_management_budgets_v3',
+  RECURRING: '@money_management_recurring_v3',
+  SETTINGS: '@money_management_settings_v3',
+  INITIALIZED: '@money_management_initialized_v3',
 };
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -19,7 +19,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   biometricLock: false,
 };
 
-// Helper to generate ISO dates relative to today
+// Helper to generate ISO dates relative to today (used only for optional demo data)
 const getRelativeDateISO = (daysAgo: number, hour: number = 12): string => {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
@@ -207,17 +207,25 @@ export const SAMPLE_TRANSACTIONS: Transaction[] = [
   },
 ];
 
+export const DEMO_ACCOUNTS: Account[] = [
+  { id: 'acc-cash', name: 'Cash Wallet', type: 'cash', balance: 35000, icon: 'wallet', color: '#10B981' },
+  { id: 'acc-main-bank', name: 'Commercial Bank Account', type: 'bank', balance: 285000, icon: 'business', color: '#3B82F6' },
+  { id: 'acc-credit-card', name: 'Mastercard / Credit Card', type: 'card', balance: -24500, icon: 'card', color: '#EC4899' },
+  { id: 'acc-savings', name: 'High-Yield Savings / Fixed', type: 'savings', balance: 750000, icon: 'shield-checkmark', color: '#8B5CF6' },
+];
+
 export const StorageService = {
-  async initDemoDataIfFirstTime(): Promise<boolean> {
+  // Brand new installs start 100% clean and fresh with NO dummy data!
+  async initFreshDataIfFirstTime(): Promise<boolean> {
     try {
       const initialized = await AsyncStorage.getItem(STORAGE_KEYS.INITIALIZED);
       if (!initialized) {
         await AsyncStorage.multiSet([
-          [STORAGE_KEYS.TRANSACTIONS, JSON.stringify(SAMPLE_TRANSACTIONS)],
+          [STORAGE_KEYS.TRANSACTIONS, JSON.stringify([])], // Clean empty transaction list!
           [STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_CATEGORIES)],
-          [STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEFAULT_ACCOUNTS)],
-          [STORAGE_KEYS.BUDGETS, JSON.stringify(SAMPLE_BUDGETS)],
-          [STORAGE_KEYS.RECURRING, JSON.stringify(SAMPLE_RECURRING)],
+          [STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEFAULT_ACCOUNTS)], // Initial 0 balances!
+          [STORAGE_KEYS.BUDGETS, JSON.stringify([])], // Clean empty budgets!
+          [STORAGE_KEYS.RECURRING, JSON.stringify([])], // Clean empty recurring bills!
           [STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS)],
           [STORAGE_KEYS.INITIALIZED, 'true'],
         ]);
@@ -225,7 +233,7 @@ export const StorageService = {
       }
       return false;
     } catch (e) {
-      console.error('Failed to init demo data:', e);
+      console.error('Failed to init fresh data:', e);
       return false;
     }
   },
@@ -272,9 +280,9 @@ export const StorageService = {
   async getBudgets(): Promise<Budget[]> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.BUDGETS);
-      return data ? JSON.parse(data) : SAMPLE_BUDGETS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return SAMPLE_BUDGETS;
+      return [];
     }
   },
 
@@ -285,9 +293,9 @@ export const StorageService = {
   async getRecurring(): Promise<RecurringItem[]> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.RECURRING);
-      return data ? JSON.parse(data) : SAMPLE_RECURRING;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return SAMPLE_RECURRING;
+      return [];
     }
   },
 
@@ -308,11 +316,12 @@ export const StorageService = {
     await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
   },
 
+  // Optional manual demo populator (from Settings screen)
   async resetToDemo(): Promise<void> {
     await AsyncStorage.multiSet([
       [STORAGE_KEYS.TRANSACTIONS, JSON.stringify(SAMPLE_TRANSACTIONS)],
       [STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_CATEGORIES)],
-      [STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEFAULT_ACCOUNTS)],
+      [STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEMO_ACCOUNTS)],
       [STORAGE_KEYS.BUDGETS, JSON.stringify(SAMPLE_BUDGETS)],
       [STORAGE_KEYS.RECURRING, JSON.stringify(SAMPLE_RECURRING)],
       [STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS)],
@@ -320,11 +329,13 @@ export const StorageService = {
     ]);
   },
 
+  // Clear all data back to clean fresh user state
   async clearAll(): Promise<void> {
-    await AsyncStorage.multiRemove([
-      STORAGE_KEYS.TRANSACTIONS,
-      STORAGE_KEYS.BUDGETS,
-      STORAGE_KEYS.RECURRING,
+    await AsyncStorage.multiSet([
+      [STORAGE_KEYS.TRANSACTIONS, JSON.stringify([])],
+      [STORAGE_KEYS.BUDGETS, JSON.stringify([])],
+      [STORAGE_KEYS.RECURRING, JSON.stringify([])],
+      [STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEFAULT_ACCOUNTS)],
     ]);
   },
 };

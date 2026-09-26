@@ -92,7 +92,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Load data on startup
   const loadAllData = useCallback(async () => {
     setLoading(true);
-    await StorageService.initDemoDataIfFirstTime();
+    await StorageService.initFreshDataIfFirstTime();
     const [txs, cats, accs, bdgs, recs, sets] = await Promise.all([
       StorageService.getTransactions(),
       StorageService.getCategories(),

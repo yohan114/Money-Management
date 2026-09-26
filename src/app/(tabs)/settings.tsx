@@ -18,8 +18,10 @@ import { useFinancial } from '../../context/FinancialContext';
 import { Card } from '../../components/Card';
 import { CurrencyConfig } from '../../types';
 import { ExportService } from '../../services/export';
+import { useRouter } from 'expo-router';
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const {
     accounts,
     categories,
@@ -158,34 +160,53 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Your Accounts ({accounts.length})</Text>
+            <Pressable
+              style={styles.addAccountBtn}
+              onPress={() => router.push('/modal/account')}
+              accessibilityRole="button"
+              accessibilityLabel="Add New Account"
+            >
+              <Ionicons name="add" size={16} color="#FFF" />
+              <Text style={styles.addAccountBtnText}>Add Account</Text>
+            </Pressable>
           </View>
 
           {accounts.map((acc) => (
-            <Card key={acc.id} style={styles.accountCard}>
-              <View style={styles.accountRow}>
-                <View style={[styles.accIconWrap, { backgroundColor: acc.color + '20' }]}>
-                  <Ionicons
-                    name={(acc.icon as any) || 'wallet'}
-                    size={22}
-                    color={acc.color}
-                  />
-                </View>
-                <View style={styles.accDetails}>
-                  <Text style={styles.accName}>{acc.name}</Text>
-                  <Text style={styles.accType}>
-                    {acc.type.toUpperCase()} ACCOUNT
+            <Pressable
+              key={acc.id}
+              onPress={() => router.push({ pathname: '/modal/account', params: { id: acc.id } })}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${acc.name}`}
+            >
+              <Card style={styles.accountCard}>
+                <View style={styles.accountRow}>
+                  <View style={[styles.accIconWrap, { backgroundColor: acc.color + '20' }]}>
+                    <Ionicons
+                      name={(acc.icon as any) || 'wallet'}
+                      size={22}
+                      color={acc.color}
+                    />
+                  </View>
+                  <View style={styles.accDetails}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.accName}>{acc.name}</Text>
+                      <Ionicons name="pencil" size={12} color={COLORS.textMuted} />
+                    </View>
+                    <Text style={styles.accType}>
+                      {acc.type.toUpperCase()} ACCOUNT
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.accBalance,
+                      { color: acc.balance >= 0 ? COLORS.textPrimary : COLORS.expense },
+                    ]}
+                  >
+                    {formatAmount(acc.balance)}
                   </Text>
                 </View>
-                <Text
-                  style={[
-                    styles.accBalance,
-                    { color: acc.balance >= 0 ? COLORS.textPrimary : COLORS.expense },
-                  ]}
-                >
-                  {formatAmount(acc.balance)}
-                </Text>
-              </View>
-            </Card>
+              </Card>
+            </Pressable>
           ))}
         </View>
 
@@ -487,13 +508,29 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
   },
   sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: SPACING.sm,
+  },
+  addAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.full,
+    gap: 4,
+  },
+  addAccountBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   sectionTitle: {
     color: COLORS.textPrimary,
     fontSize: 17,
     fontWeight: '700',
-    marginBottom: SPACING.sm,
   },
   accountCard: {
     marginBottom: SPACING.sm,
