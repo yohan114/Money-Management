@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 import { Budget } from '../types';
 import { useFinancial } from '../context/FinancialContext';
@@ -14,6 +15,7 @@ interface BudgetCardProps {
 }
 
 export const BudgetCard: React.FC<BudgetCardProps> = ({ budget, onEdit, onDelete }) => {
+  const router = useRouter();
   const { getCategoryById, getCategorySpentForMonth, selectedMonth, formatAmount } =
     useFinancial();
 
@@ -38,90 +40,129 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({ budget, onEdit, onDelete
     ? 'Near Limit'
     : 'On Track';
 
+  const items = budget.items || [];
+  const closedCount = items.filter((i) => i.status === 'closed').length;
+  const slipsCount = items.filter((i) => !!i.slipImageUri).length;
+
+  const handleCardPress = () => {
+    router.push(`/budget/${budget.id}` as any);
+  };
+
   return (
-    <Card style={styles.card}>
-      {/* Top Header */}
-      <View style={styles.header}>
-        <View style={styles.catInfo}>
-          <View
-            style={[
-              styles.iconWrapper,
-              { backgroundColor: (category?.color || COLORS.primary) + '20' },
-            ]}
-          >
-            <Ionicons
-              name={(category?.icon as any) || 'pie-chart'}
-              size={18}
-              color={category?.color || COLORS.primary}
-            />
+    <Pressable onPress={handleCardPress} style={({ pressed }) => [{ opacity: pressed ? 0.92 : 1 }]}>
+      <Card style={styles.card}>
+        {/* Top Header */}
+        <View style={styles.header}>
+          <View style={styles.catInfo}>
+            <View
+              style={[
+                styles.iconWrapper,
+                { backgroundColor: (category?.color || COLORS.primary) + '20' },
+              ]}
+            >
+              <Ionicons
+                name={(category?.icon as any) || 'pie-chart'}
+                size={18}
+                color={category?.color || COLORS.primary}
+              />
+            </View>
+            <View>
+              <Text style={styles.catName}>{category?.name || 'All Categories'}</Text>
+              <Text style={styles.subtext}>Monthly Limit</Text>
+            </View>
           </View>
+
+          <View style={styles.actions}>
+            <View style={[styles.badge, { backgroundColor: statusColor + '20' }]}>
+              <Text style={[styles.badgeText, { color: statusColor }]}>{statusLabel}</Text>
+            </View>
+
+            {onEdit && (
+              <Pressable
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                style={styles.iconBtn}
+                hitSlop={8}
+                accessibilityLabel="Edit budget"
+              >
+                <Ionicons name="pencil-outline" size={16} color={COLORS.textSecondary} />
+              </Pressable>
+            )}
+
+            {onDelete && (
+              <Pressable
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                style={styles.iconBtn}
+                hitSlop={8}
+                accessibilityLabel="Delete budget"
+              >
+                <Ionicons name="trash-outline" size={16} color={COLORS.textMuted} />
+              </Pressable>
+            )}
+          </View>
+        </View>
+
+        {/* Progress Bar */}
+        <View style={styles.progressSection}>
+          <ProgressBar progress={percentage} color={statusColor} height={8} />
+        </View>
+
+        {/* Bottom Numbers */}
+        <View style={styles.footer}>
           <View>
-            <Text style={styles.catName}>{category?.name || 'All Categories'}</Text>
-            <Text style={styles.subtext}>Monthly Limit</Text>
+            <Text style={styles.statLabel}>Spent</Text>
+            <Text style={styles.statValue}>{formatAmount(spent)}</Text>
+          </View>
+
+          <View style={styles.alignCenter}>
+            <Text style={styles.statLabel}>Progress</Text>
+            <Text style={[styles.statValue, { color: statusColor }]}>
+              {percentage.toFixed(0)}%
+            </Text>
+          </View>
+
+          <View style={styles.alignRight}>
+            <Text style={styles.statLabel}>{isOver ? 'Exceeded by' : 'Remaining'}</Text>
+            <Text
+              style={[
+                styles.statValue,
+                { color: isOver ? COLORS.expense : COLORS.textPrimary },
+              ]}
+            >
+              {formatAmount(Math.abs(remaining))}
+            </Text>
           </View>
         </View>
 
-        <View style={styles.actions}>
-          <View style={[styles.badge, { backgroundColor: statusColor + '20' }]}>
-            <Text style={[styles.badgeText, { color: statusColor }]}>{statusLabel}</Text>
+        {/* Itemized / Slips Indicator Bar */}
+        <View style={styles.itemsIndicatorRow}>
+          <View style={styles.itemsIndicatorLeft}>
+            <Ionicons name="list-circle-outline" size={16} color={COLORS.primaryLight} />
+            <Text style={styles.itemsIndicatorText}>
+              {items.length > 0
+                ? `${closedCount}/${items.length} items bought`
+                : 'Tap to add items & slips'}
+            </Text>
+            {slipsCount > 0 && (
+              <View style={styles.slipsMiniBadge}>
+                <Ionicons name="receipt" size={11} color={COLORS.primaryLight} />
+                <Text style={styles.slipsMiniText}>{slipsCount}</Text>
+              </View>
+            )}
           </View>
 
-          {onEdit && (
-            <Pressable
-              onPress={onEdit}
-              style={styles.iconBtn}
-              hitSlop={8}
-              accessibilityLabel="Edit budget"
-            >
-              <Ionicons name="pencil-outline" size={16} color={COLORS.textSecondary} />
-            </Pressable>
-          )}
-
-          {onDelete && (
-            <Pressable
-              onPress={onDelete}
-              style={styles.iconBtn}
-              hitSlop={8}
-              accessibilityLabel="Delete budget"
-            >
-              <Ionicons name="trash-outline" size={16} color={COLORS.textMuted} />
-            </Pressable>
-          )}
+          <View style={styles.viewItemsLink}>
+            <Text style={styles.viewItemsLinkText}>View Items</Text>
+            <Ionicons name="chevron-forward" size={14} color={COLORS.primaryLight} />
+          </View>
         </View>
-      </View>
-
-      {/* Progress Bar */}
-      <View style={styles.progressSection}>
-        <ProgressBar progress={percentage} color={statusColor} height={8} />
-      </View>
-
-      {/* Bottom Numbers */}
-      <View style={styles.footer}>
-        <View>
-          <Text style={styles.statLabel}>Spent</Text>
-          <Text style={styles.statValue}>{formatAmount(spent)}</Text>
-        </View>
-
-        <View style={styles.alignCenter}>
-          <Text style={styles.statLabel}>Progress</Text>
-          <Text style={[styles.statValue, { color: statusColor }]}>
-            {percentage.toFixed(0)}%
-          </Text>
-        </View>
-
-        <View style={styles.alignRight}>
-          <Text style={styles.statLabel}>{isOver ? 'Exceeded by' : 'Remaining'}</Text>
-          <Text
-            style={[
-              styles.statValue,
-              { color: isOver ? COLORS.expense : COLORS.textPrimary },
-            ]}
-          >
-            {formatAmount(Math.abs(remaining))}
-          </Text>
-        </View>
-      </View>
-    </Card>
+      </Card>
+    </Pressable>
   );
 };
 
@@ -201,5 +242,48 @@ const styles = StyleSheet.create({
   },
   alignRight: {
     alignItems: 'flex-end',
+  },
+  itemsIndicatorRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.xs,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border + '60',
+  },
+  itemsIndicatorLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  itemsIndicatorText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  slipsMiniBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: COLORS.primaryGlow,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+  },
+  slipsMiniText: {
+    color: COLORS.primaryLight,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  viewItemsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  viewItemsLinkText: {
+    color: COLORS.primaryLight,
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

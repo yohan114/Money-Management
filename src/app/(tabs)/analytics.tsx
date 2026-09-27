@@ -59,11 +59,20 @@ export default function AnalyticsScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Financial Insights</Text>
-          <Text style={styles.subtitle}>
-            Analysis for {selectedMonth}
-            {selectedAccount ? ` • ${selectedAccount.name}` : ' • All Accounts'}
-          </Text>
+          <View>
+            <Text style={styles.title}>Financial Insights</Text>
+            <Text style={styles.subtitle}>
+              Analysis for {selectedMonth}
+              {selectedAccount ? ` • ${selectedAccount.name}` : ' • All Accounts'}
+            </Text>
+          </View>
+          <Pressable
+            style={styles.headerReportBtn}
+            onPress={() => router.push('/reports/monthly-cost')}
+          >
+            <Ionicons name="document-text-outline" size={15} color={COLORS.primaryLight} />
+            <Text style={styles.headerReportBtnText}>Cost Report</Text>
+          </Pressable>
         </View>
 
         {/* Multi-Account Isolation Switcher (Salary vs Channery vs Company) */}
@@ -470,6 +479,9 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: SPACING.md,
   },
   title: {
@@ -482,6 +494,22 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 13,
     marginTop: 2,
+  },
+  headerReportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '50',
+    gap: 4,
+  },
+  headerReportBtnText: {
+    color: COLORS.primaryLight,
+    fontSize: 12,
+    fontWeight: '700',
   },
   accountSwitcherContainer: {
     marginBottom: SPACING.md,

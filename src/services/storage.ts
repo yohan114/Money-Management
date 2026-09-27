@@ -41,12 +41,89 @@ const getRelativeDateISO = (daysAgo: number, hour: number = 12): string => {
 };
 
 export const SAMPLE_BUDGETS: Budget[] = [
-  { id: 'b-food', categoryId: 'cat-food', monthlyLimit: 35000, month: 'global' },
-  { id: 'b-groceries', categoryId: 'cat-groceries', monthlyLimit: 45000, month: 'global' },
-  { id: 'b-transport', categoryId: 'cat-transport', monthlyLimit: 25000, month: 'global' },
-  { id: 'b-shopping', categoryId: 'cat-shopping', monthlyLimit: 30000, month: 'global' },
-  { id: 'b-entertainment', categoryId: 'cat-entertainment', monthlyLimit: 15000, month: 'global' },
-  { id: 'b-utilities', categoryId: 'cat-utilities', monthlyLimit: 20000, month: 'global' },
+  {
+    id: 'b-groceries',
+    categoryId: 'cat-groceries',
+    accountId: 'acc-chamery',
+    monthlyLimit: 45000,
+    month: 'global',
+    items: [
+      {
+        id: 'bi-01',
+        budgetId: 'b-groceries',
+        name: 'Keeri Samba Rice 10kg',
+        estimatedCost: 2600,
+        targetWeek: 1,
+        status: 'closed',
+        actualCost: 2650,
+        closedAt: getRelativeDateISO(20),
+        notes: 'Bought from wholesale shop',
+      },
+      {
+        id: 'bi-02',
+        budgetId: 'b-groceries',
+        name: 'Mysore Dhal 5kg',
+        estimatedCost: 1750,
+        targetWeek: 1,
+        status: 'closed',
+        actualCost: 1700,
+        closedAt: getRelativeDateISO(19),
+      },
+      {
+        id: 'bi-03',
+        budgetId: 'b-groceries',
+        name: 'White Sugar 3kg',
+        estimatedCost: 900,
+        targetWeek: 2,
+        status: 'closed',
+        actualCost: 920,
+        closedAt: getRelativeDateISO(12),
+      },
+      {
+        id: 'bi-04',
+        budgetId: 'b-groceries',
+        name: 'Anchor Milk Powder 400g x 2',
+        estimatedCost: 2200,
+        targetWeek: 2,
+        status: 'planned',
+      },
+      {
+        id: 'bi-05',
+        budgetId: 'b-groceries',
+        name: 'Coconut Oil 1.5L',
+        estimatedCost: 1450,
+        targetWeek: 3,
+        status: 'planned',
+      },
+      {
+        id: 'bi-06',
+        budgetId: 'b-groceries',
+        name: 'Spices, Chili & Curry Powder',
+        estimatedCost: 1800,
+        targetWeek: 3,
+        status: 'planned',
+      },
+      {
+        id: 'bi-07',
+        budgetId: 'b-groceries',
+        name: 'Washing Powder & House Soaps',
+        estimatedCost: 2500,
+        targetWeek: 4,
+        status: 'planned',
+      },
+    ],
+    weeklyLimits: {
+      week1: 12000,
+      week2: 11000,
+      week3: 11000,
+      week4: 11000,
+    },
+  },
+  { id: 'b-food', categoryId: 'cat-food', accountId: 'acc-chamery', monthlyLimit: 35000, month: 'global', items: [] },
+  { id: 'b-transport', categoryId: 'cat-transport', accountId: 'acc-salary', monthlyLimit: 25000, month: 'global', items: [] },
+  { id: 'b-shopping', categoryId: 'cat-shopping', monthlyLimit: 30000, month: 'global', items: [] },
+  { id: 'b-entertainment', categoryId: 'cat-entertainment', monthlyLimit: 15000, month: 'global', items: [] },
+  { id: 'b-utilities', categoryId: 'cat-utilities', accountId: 'acc-chamery', monthlyLimit: 20000, month: 'global', items: [] },
 ];
 
 export const SAMPLE_GOALS: FinancialGoal[] = [
@@ -317,7 +394,12 @@ export const StorageService = {
   async getBudgets(): Promise<Budget[]> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.BUDGETS);
-      return data ? JSON.parse(data) : [];
+      if (!data) return [];
+      const parsed: Budget[] = JSON.parse(data);
+      return parsed.map((b) => ({
+        ...b,
+        items: Array.isArray(b.items) ? b.items : [],
+      }));
     } catch {
       return [];
     }

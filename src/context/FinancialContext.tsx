@@ -4,6 +4,7 @@ import {
   Category,
   Account,
   Budget,
+  BudgetItem,
   RecurringItem,
   UserSettings,
   FinancialGoal,
@@ -59,6 +60,19 @@ interface FinancialContextValue {
   addBudget: (data: Omit<Budget, 'id'>) => Promise<void>;
   updateBudget: (data: Budget) => Promise<void>;
   deleteBudget: (id: string) => Promise<void>;
+  addBudgetItem: (budgetId: string, item: Omit<BudgetItem, 'id' | 'budgetId'>) => Promise<void>;
+  updateBudgetItem: (budgetId: string, item: BudgetItem) => Promise<void>;
+  deleteBudgetItem: (budgetId: string, itemId: string) => Promise<void>;
+  closeBudgetItem: (
+    budgetId: string,
+    itemId: string,
+    data: {
+      actualCost: number;
+      accountId: string;
+      slipImageUri?: string;
+      notes?: string;
+    }
+  ) => Promise<void>;
 
   addRecurringItem: (data: Omit<RecurringItem, 'id'>) => Promise<void>;
   updateRecurringItem: (data: RecurringItem) => Promise<void>;
@@ -367,6 +381,135 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       await StorageService.saveBudgets(updated);
     },
     [budgets]
+  );
+
+  const addBudgetItem = useCallback(
+    async (budgetId: string, itemData: Omit<BudgetItem, 'id' | 'budgetId'>) => {
+      const budget = budgets.find((b) => b.id === budgetId);
+      if (!budget) return;
+
+      const newItem: BudgetItem = {
+        ...itemData,
+        id: `bi-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        budgetId,
+      };
+
+      const currentItems = budget.items || [];
+      const updatedBudget: Budget = {
+        ...budget,
+        items: [...currentItems, newItem],
+      };
+
+      const updatedBudgets = budgets.map((b) => (b.id === budgetId ? updatedBudget : b));
+      setBudgets(updatedBudgets);
+      await StorageService.saveBudgets(updatedBudgets);
+    },
+    [budgets]
+  );
+
+  const updateBudgetItem = useCallback(
+    async (budgetId: string, updatedItem: BudgetItem) => {
+      const budget = budgets.find((b) => b.id === budgetId);
+      if (!budget) return;
+
+      const currentItems = budget.items || [];
+      const updatedBudget: Budget = {
+        ...budget,
+        items: currentItems.map((i) => (i.id === updatedItem.id ? updatedItem : i)),
+      };
+
+      const updatedBudgets = budgets.map((b) => (b.id === budgetId ? updatedBudget : b));
+      setBudgets(updatedBudgets);
+      await StorageService.saveBudgets(updatedBudgets);
+    },
+    [budgets]
+  );
+
+  const deleteBudgetItem = useCallback(
+    async (budgetId: string, itemId: string) => {
+      const budget = budgets.find((b) => b.id === budgetId);
+      if (!budget) return;
+
+      const currentItems = budget.items || [];
+      const updatedBudget: Budget = {
+        ...budget,
+        items: currentItems.filter((i) => i.id !== itemId),
+      };
+
+      const updatedBudgets = budgets.map((b) => (b.id === budgetId ? updatedBudget : b));
+      setBudgets(updatedBudgets);
+      await StorageService.saveBudgets(updatedBudgets);
+    },
+    [budgets]
+  );
+
+  const closeBudgetItem = useCallback(
+    async (
+      budgetId: string,
+      itemId: string,
+      data: {
+        actualCost: number;
+        accountId: string;
+        slipImageUri?: string;
+        notes?: string;
+      }
+    ) => {
+      const budget = budgets.find((b) => b.id === budgetId);
+      if (!budget) return;
+      const item = (budget.items || []).find((i) => i.id === itemId);
+      if (!item) return;
+
+      // 1. Create transaction with slip
+      const txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const newTx: Transaction = {
+        id: txId,
+        type: 'expense',
+        amount: data.actualCost,
+        categoryId: budget.categoryId,
+        accountId: data.accountId,
+        date: new Date().toISOString(),
+        note: `${item.name}${data.notes ? ' - ' + data.notes : ''} (Budget slip closed)`,
+        imageUri: data.slipImageUri,
+        tags: ['#budget-slip', `#week-${item.targetWeek}`],
+      };
+
+      const updatedTxs = [newTx, ...transactions];
+      setTransactions(updatedTxs);
+      await StorageService.saveTransactions(updatedTxs);
+
+      // Adjust account balance
+      const updatedAccounts = accounts.map((acc) => {
+        if (acc.id === data.accountId) {
+          const isLiability = acc.isLiability || acc.type === 'card' || acc.type === 'loan';
+          const delta = isLiability ? data.actualCost : -data.actualCost;
+          return { ...acc, balance: acc.balance + delta };
+        }
+        return acc;
+      });
+      setAccounts(updatedAccounts);
+      await StorageService.saveAccounts(updatedAccounts);
+
+      // 2. Mark item as closed
+      const closedItem: BudgetItem = {
+        ...item,
+        status: 'closed',
+        actualCost: data.actualCost,
+        closedAt: new Date().toISOString(),
+        slipImageUri: data.slipImageUri,
+        linkedTransactionId: txId,
+        notes: data.notes || item.notes,
+      };
+
+      const updatedBudget: Budget = {
+        ...budget,
+        items: (budget.items || []).map((i) => (i.id === itemId ? closedItem : i)),
+      };
+
+      const updatedBudgets = budgets.map((b) => (b.id === budgetId ? updatedBudget : b));
+      setBudgets(updatedBudgets);
+      await StorageService.saveBudgets(updatedBudgets);
+    },
+    [budgets, transactions, accounts]
   );
 
   // Recurring Items
@@ -830,6 +973,10 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       addBudget,
       updateBudget,
       deleteBudget,
+      addBudgetItem,
+      updateBudgetItem,
+      deleteBudgetItem,
+      closeBudgetItem,
       addRecurringItem,
       updateRecurringItem,
       deleteRecurringItem,
@@ -888,6 +1035,10 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       addBudget,
       updateBudget,
       deleteBudget,
+      addBudgetItem,
+      updateBudgetItem,
+      deleteBudgetItem,
+      closeBudgetItem,
       addRecurringItem,
       updateRecurringItem,
       deleteRecurringItem,

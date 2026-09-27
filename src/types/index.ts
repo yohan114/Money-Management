@@ -51,11 +51,33 @@ export interface Transaction {
   tags?: string[]; // e.g. ["#business", "#tax-deductible", "#travel"]
 }
 
+export interface BudgetItem {
+  id: string;
+  budgetId: string;
+  name: string;
+  estimatedCost: number;
+  targetWeek: 1 | 2 | 3 | 4 | 5;
+  status: 'planned' | 'closed';
+  actualCost?: number;
+  closedAt?: string;
+  slipImageUri?: string;
+  linkedTransactionId?: string;
+  notes?: string;
+}
+
 export interface Budget {
   id: string;
   categoryId: string;
+  accountId?: string;
   monthlyLimit: number;
   month: string; // YYYY-MM or 'global'
+  items?: BudgetItem[];
+  weeklyLimits?: {
+    week1: number;
+    week2: number;
+    week3: number;
+    week4: number;
+  };
 }
 
 export interface RecurringItem {

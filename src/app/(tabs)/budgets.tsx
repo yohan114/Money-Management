@@ -187,21 +187,34 @@ export default function BudgetsScreen() {
             </Text>
           </View>
 
-          <Pressable
-            style={styles.addBtn}
-            onPress={() =>
-              activeTab === 'budgets'
-                ? router.push('/modal/budget')
-                : router.push('/modal/goal')
-            }
-            accessibilityRole="button"
-            accessibilityLabel={activeTab === 'budgets' ? 'Add Budget' : 'Add Goal'}
-          >
-            <Ionicons name="add" size={20} color="#FFF" />
-            <Text style={styles.addBtnText}>
-              {activeTab === 'budgets' ? 'New Budget' : 'New Goal'}
-            </Text>
-          </Pressable>
+          <View style={styles.headerBtns}>
+            {activeTab === 'budgets' && (
+              <Pressable
+                style={styles.reportBtn}
+                onPress={() => router.push('/reports/monthly-cost')}
+                accessibilityLabel="Cost Report"
+              >
+                <Ionicons name="document-text-outline" size={16} color={COLORS.primaryLight} />
+                <Text style={styles.reportBtnText}>Report</Text>
+              </Pressable>
+            )}
+
+            <Pressable
+              style={styles.addBtn}
+              onPress={() =>
+                activeTab === 'budgets'
+                  ? router.push('/modal/budget')
+                  : router.push('/modal/goal')
+              }
+              accessibilityRole="button"
+              accessibilityLabel={activeTab === 'budgets' ? 'Add Budget' : 'Add Goal'}
+            >
+              <Ionicons name="add" size={18} color="#FFF" />
+              <Text style={styles.addBtnText}>
+                {activeTab === 'budgets' ? 'New Budget' : 'New Goal'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
         {/* TAB 1: MONTHLY BUDGETS VIEW */}
@@ -722,6 +735,27 @@ const styles = StyleSheet.create({
   },
   accountTabChipTextActive: {
     color: '#FFF',
+    fontWeight: '700',
+  },
+  headerBtns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '50',
+    gap: 4,
+  },
+  reportBtnText: {
+    color: COLORS.primaryLight,
+    fontSize: 12,
     fontWeight: '700',
   },
   addBtn: {
