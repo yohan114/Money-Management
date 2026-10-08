@@ -13,6 +13,9 @@ import {
   CloudBackupPayload,
   Loan,
   IncomeStream,
+  Vehicle,
+  FuelLog,
+  ServiceRecord,
 } from '../types';
 import { DEFAULT_CATEGORIES, DEFAULT_ACCOUNTS } from '../constants/theme';
 
@@ -461,6 +464,87 @@ export const SAMPLE_LOANS: Loan[] = [
   },
 ];
 
+export const SAMPLE_VEHICLES: Vehicle[] = [
+  {
+    id: 'veh-01',
+    name: 'Toyota Prius',
+    plateNumber: 'WP CAD-5678',
+    type: 'car',
+    fuelType: 'petrol_92',
+    initialOdometer: 45000,
+    currentOdometer: 46250,
+    tankCapacityLiters: 45,
+    icon: 'car',
+    color: '#3B82F6',
+    nextServiceOdometer: 48000,
+    nextServiceDate: '2026-11-15',
+  },
+  {
+    id: 'veh-02',
+    name: 'Honda Dio',
+    plateNumber: 'WP BHY-1234',
+    type: 'scooter',
+    fuelType: 'petrol_92',
+    initialOdometer: 8200,
+    currentOdometer: 8750,
+    tankCapacityLiters: 5.3,
+    icon: 'bicycle',
+    color: '#EC4899',
+    nextServiceOdometer: 9500,
+    nextServiceDate: '2026-12-01',
+  },
+];
+
+export const SAMPLE_FUEL_LOGS: FuelLog[] = [
+  {
+    id: 'fuel-01',
+    vehicleId: 'veh-01',
+    date: getRelativeDateISO(18),
+    odometer: 45450,
+    liters: 30,
+    pricePerLiter: 370,
+    totalCost: 11100,
+    isFullTank: true,
+    paidFromAccountId: 'acc-salary',
+    stationName: 'Ceypetco Nugegoda',
+    note: 'Full tank fill-up',
+    distanceDriven: 450,
+    fuelEfficiencyKmPerLiter: 15.0,
+  },
+  {
+    id: 'fuel-02',
+    vehicleId: 'veh-01',
+    date: getRelativeDateISO(5),
+    odometer: 46250,
+    liters: 35,
+    pricePerLiter: 370,
+    totalCost: 12950,
+    isFullTank: true,
+    paidFromAccountId: 'acc-salary',
+    stationName: 'IOC Moratuwa',
+    note: 'Trip to Galle and back',
+    distanceDriven: 800,
+    fuelEfficiencyKmPerLiter: 22.8,
+  },
+];
+
+export const SAMPLE_SERVICE_RECORDS: ServiceRecord[] = [
+  {
+    id: 'srv-01',
+    vehicleId: 'veh-01',
+    date: getRelativeDateISO(45),
+    odometer: 43000,
+    serviceType: 'routine_oil',
+    title: 'Engine Oil & Filter Change',
+    cost: 14500,
+    paidFromAccountId: 'acc-salary',
+    workshopName: 'Toyota Lanka Maharagama',
+    notes: 'Mobil 1 0W-20 Synthetic Oil, OEM Oil filter replaced',
+    nextServiceDueOdometer: 48000,
+    nextServiceDueDate: '2026-11-15',
+  },
+];
+
 export const StorageService = {
   // Brand new installs start 100% clean and fresh with NO dummy data!
   async initFreshDataIfFirstTime(): Promise<boolean> {
@@ -479,6 +563,9 @@ export const StorageService = {
           [STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS)],
           [STORAGE_KEYS.LOANS, JSON.stringify([])], // Clean empty loans!
           [STORAGE_KEYS.INCOME_STREAMS, JSON.stringify(DEFAULT_INCOME_STREAMS)],
+          [STORAGE_KEYS.VEHICLES, JSON.stringify([])], // Clean empty vehicles!
+          [STORAGE_KEYS.FUEL_LOGS, JSON.stringify([])], // Clean empty fuel logs!
+          [STORAGE_KEYS.SERVICE_RECORDS, JSON.stringify([])], // Clean empty service records!
           [STORAGE_KEYS.INITIALIZED, 'true'],
         ]);
         return true;
@@ -645,6 +732,46 @@ export const StorageService = {
     await AsyncStorage.setItem(STORAGE_KEYS.INCOME_STREAMS, JSON.stringify(streams));
   },
 
+  // Vehicles, Fuel Logs & Service Records
+  async getVehicles(): Promise<Vehicle[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.VEHICLES);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveVehicles(vehicles: Vehicle[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
+  },
+
+  async getFuelLogs(): Promise<FuelLog[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.FUEL_LOGS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveFuelLogs(logs: FuelLog[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.FUEL_LOGS, JSON.stringify(logs));
+  },
+
+  async getServiceRecords(): Promise<ServiceRecord[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.SERVICE_RECORDS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveServiceRecords(records: ServiceRecord[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.SERVICE_RECORDS, JSON.stringify(records));
+  },
+
   // Optional manual demo populator (from Settings screen)
   async resetToDemo(): Promise<void> {
     await AsyncStorage.multiSet([
@@ -658,6 +785,9 @@ export const StorageService = {
       [STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS)],
       [STORAGE_KEYS.LOANS, JSON.stringify(SAMPLE_LOANS)],
       [STORAGE_KEYS.INCOME_STREAMS, JSON.stringify(DEFAULT_INCOME_STREAMS)],
+      [STORAGE_KEYS.VEHICLES, JSON.stringify(SAMPLE_VEHICLES)],
+      [STORAGE_KEYS.FUEL_LOGS, JSON.stringify(SAMPLE_FUEL_LOGS)],
+      [STORAGE_KEYS.SERVICE_RECORDS, JSON.stringify(SAMPLE_SERVICE_RECORDS)],
       [STORAGE_KEYS.INITIALIZED, 'true'],
     ]);
   },

@@ -178,6 +178,70 @@ export interface IncomeStream {
   color: string;
 }
 
+export type VehicleType = 'car' | 'bike' | 'van' | 'scooter' | 'truck' | 'other';
+export type FuelType = 'petrol_92' | 'petrol_95' | 'auto_diesel' | 'super_diesel' | 'electric' | 'hybrid' | 'cng';
+
+export interface Vehicle {
+  id: string;
+  name: string; // e.g. "Toyota Prius", "Honda Dio"
+  plateNumber: string; // e.g. "WP CAD-1234"
+  type: VehicleType;
+  fuelType: FuelType;
+  initialOdometer: number; // km
+  currentOdometer: number; // km
+  tankCapacityLiters?: number;
+  icon: string;
+  color: string;
+  nextServiceOdometer?: number; // km
+  nextServiceDate?: string; // YYYY-MM-DD
+}
+
+export interface FuelLog {
+  id: string;
+  vehicleId: string;
+  date: string; // ISO 8601
+  odometer: number; // meter reading at pump in km
+  liters: number;
+  pricePerLiter: number;
+  totalCost: number;
+  isFullTank: boolean;
+  paidFromAccountId: string;
+  slipImageUri?: string; // pump receipt photo
+  stationName?: string; // e.g. "Ceypetco Nugegoda", "IOC"
+  note?: string;
+  distanceDriven?: number;
+  fuelEfficiencyKmPerLiter?: number;
+  linkedTransactionId?: string;
+}
+
+export type ServiceType =
+  | 'routine_oil'
+  | 'full_service'
+  | 'brakes'
+  | 'tires'
+  | 'battery'
+  | 'repair'
+  | 'insurance_revenue'
+  | 'wash_detailing'
+  | 'other';
+
+export interface ServiceRecord {
+  id: string;
+  vehicleId: string;
+  date: string; // ISO 8601
+  odometer: number;
+  serviceType: ServiceType;
+  title: string;
+  cost: number;
+  paidFromAccountId: string;
+  workshopName?: string;
+  slipImageUri?: string; // invoice/receipt photo
+  notes?: string;
+  nextServiceDueOdometer?: number;
+  nextServiceDueDate?: string; // YYYY-MM-DD
+  linkedTransactionId?: string;
+}
+
 export interface UserSettings {
   currency: string;
   currencySymbol: string;
@@ -193,6 +257,9 @@ export interface CloudBackupMetadata {
   budgetsCount: number;
   budgetItemsCount: number;
   loansCount?: number;
+  vehiclesCount?: number;
+  fuelLogsCount?: number;
+  serviceRecordsCount?: number;
   totalNetWorth?: number;
 }
 
@@ -212,6 +279,9 @@ export interface CloudBackupPayload {
     rulesCount: number;
     categoriesCount: number;
     loansCount?: number;
+    vehiclesCount?: number;
+    fuelLogsCount?: number;
+    serviceRecordsCount?: number;
   };
   data: {
     transactions: Transaction[];
@@ -225,8 +295,8 @@ export interface CloudBackupPayload {
     settings: UserSettings;
     loans?: Loan[];
     incomeStreams?: IncomeStream[];
-    vehicles?: any[];
-    fuelLogs?: any[];
-    serviceRecords?: any[];
+    vehicles?: Vehicle[];
+    fuelLogs?: FuelLog[];
+    serviceRecords?: ServiceRecord[];
   };
 }

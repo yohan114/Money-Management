@@ -16,6 +16,9 @@ import {
   LoanRepayment,
   LoanSpendingItem,
   IncomeStream,
+  Vehicle,
+  FuelLog,
+  ServiceRecord,
 } from '../types';
 import { StorageService, DEFAULT_SETTINGS } from '../services/storage';
 import { CloudBackupService, PickBackupResult } from '../services/cloudBackup';
@@ -160,6 +163,33 @@ interface FinancialContextValue {
   deleteLoanRepayment: (loanId: string, repaymentId: string) => Promise<void>;
   addIncomeStream: (data: Omit<IncomeStream, 'id'>) => Promise<void>;
   deleteIncomeStream: (id: string) => Promise<void>;
+
+  // Phase 3: Vehicles, Fuel & Maintenance
+  vehicles: Vehicle[];
+  fuelLogs: FuelLog[];
+  serviceRecords: ServiceRecord[];
+  totalFuelCostThisMonth: number;
+  totalFuelLitersThisMonth: number;
+  upcomingServiceReminders: {
+    vehicle: Vehicle;
+    reason: 'odometer' | 'date';
+    remainingKm?: number;
+    remainingDays?: number;
+    isOverdue: boolean;
+  }[];
+  addVehicle: (data: Omit<Vehicle, 'id'>) => Promise<void>;
+  updateVehicle: (data: Vehicle) => Promise<void>;
+  deleteVehicle: (id: string) => Promise<void>;
+  addFuelLog: (
+    data: Omit<FuelLog, 'id'>,
+    options?: { autoDebitAccount?: boolean }
+  ) => Promise<void>;
+  deleteFuelLog: (id: string) => Promise<void>;
+  addServiceRecord: (
+    data: Omit<ServiceRecord, 'id'>,
+    options?: { autoDebitAccount?: boolean }
+  ) => Promise<void>;
+  deleteServiceRecord: (id: string) => Promise<void>;
 }
 
 const FinancialContext = createContext<FinancialContextValue | undefined>(undefined);
@@ -178,6 +208,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [lastBackupInfo, setLastBackupInfo] = useState<CloudBackupMetadata | null>(null);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [incomeStreams, setIncomeStreams] = useState<IncomeStream[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [fuelLogs, setFuelLogs] = useState<FuelLog[]>([]);
+  const [serviceRecords, setServiceRecords] = useState<ServiceRecord[]>([]);
 
   const currentYearMonth = useMemo(() => {
     const now = new Date();
@@ -197,7 +230,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const loadAllData = useCallback(async () => {
     setLoading(true);
     await StorageService.initFreshDataIfFirstTime();
-    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets, backupMeta, lns, strms] = await Promise.all([
+    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets, backupMeta, lns, strms, vehs, fuels, srvs] = await Promise.all([
       StorageService.getTransactions(),
       StorageService.getCategories(),
       StorageService.getAccounts(),
@@ -210,6 +243,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       StorageService.getLastBackupMetadata(),
       StorageService.getLoans(),
       StorageService.getIncomeStreams(),
+      StorageService.getVehicles(),
+      StorageService.getFuelLogs(),
+      StorageService.getServiceRecords(),
     ]);
 
     setTransactions(txs);
@@ -224,6 +260,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setLastBackupInfo(backupMeta);
     setLoans(lns);
     setIncomeStreams(strms);
+    setVehicles(vehs);
+    setFuelLogs(fuels);
+    setServiceRecords(srvs);
     setLoading(false);
   }, []);
 
@@ -1090,6 +1129,296 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [incomeStreams]
   );
 
+  // Phase 3: Vehicles, Fuel & Maintenance
+  const totalFuelCostThisMonth = useMemo(() => {
+    return fuelLogs
+      .filter((fl) => fl.date.startsWith(selectedMonth))
+      .reduce((sum, fl) => sum + fl.totalCost, 0);
+  }, [fuelLogs, selectedMonth]);
+
+  const totalFuelLitersThisMonth = useMemo(() => {
+    return fuelLogs
+      .filter((fl) => fl.date.startsWith(selectedMonth))
+      .reduce((sum, fl) => sum + fl.liters, 0);
+  }, [fuelLogs, selectedMonth]);
+
+  const upcomingServiceReminders = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const reminders: {
+      vehicle: Vehicle;
+      reason: 'odometer' | 'date';
+      remainingKm?: number;
+      remainingDays?: number;
+      isOverdue: boolean;
+    }[] = [];
+
+    vehicles.forEach((veh) => {
+      // Check Odometer limit
+      if (veh.nextServiceOdometer) {
+        const remainingKm = veh.nextServiceOdometer - veh.currentOdometer;
+        if (remainingKm <= 500) {
+          reminders.push({
+            vehicle: veh,
+            reason: 'odometer',
+            remainingKm,
+            isOverdue: remainingKm < 0,
+          });
+        }
+      }
+
+      // Check Date limit
+      if (veh.nextServiceDate) {
+        const dueDate = new Date(veh.nextServiceDate);
+        dueDate.setHours(0, 0, 0, 0);
+        const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays <= 14) {
+          reminders.push({
+            vehicle: veh,
+            reason: 'date',
+            remainingDays: diffDays,
+            isOverdue: diffDays < 0,
+          });
+        }
+      }
+    });
+
+    return reminders;
+  }, [vehicles]);
+
+  const addVehicle = useCallback(
+    async (data: Omit<Vehicle, 'id'>) => {
+      const newVeh: Vehicle = {
+        ...data,
+        id: `veh-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      };
+      const updated = [...vehicles, newVeh];
+      setVehicles(updated);
+      await StorageService.saveVehicles(updated);
+    },
+    [vehicles]
+  );
+
+  const updateVehicle = useCallback(
+    async (data: Vehicle) => {
+      const updated = vehicles.map((v) => (v.id === data.id ? data : v));
+      setVehicles(updated);
+      await StorageService.saveVehicles(updated);
+    },
+    [vehicles]
+  );
+
+  const deleteVehicle = useCallback(
+    async (id: string) => {
+      const updated = vehicles.filter((v) => v.id !== id);
+      setVehicles(updated);
+      await StorageService.saveVehicles(updated);
+    },
+    [vehicles]
+  );
+
+  const addFuelLog = useCallback(
+    async (data: Omit<FuelLog, 'id'>, options?: { autoDebitAccount?: boolean }) => {
+      const logId = `fuel-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const targetVeh = vehicles.find((v) => v.id === data.vehicleId);
+
+      const previousLogs = fuelLogs
+        .filter((l) => l.vehicleId === data.vehicleId && new Date(l.date).getTime() < new Date(data.date).getTime())
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      const lastLog = previousLogs[0];
+      let distanceDriven: number | undefined;
+      let fuelEfficiencyKmPerLiter: number | undefined;
+
+      if (lastLog && data.odometer > lastLog.odometer) {
+        distanceDriven = data.odometer - lastLog.odometer;
+        if (data.isFullTank && data.liters > 0) {
+          fuelEfficiencyKmPerLiter = parseFloat((distanceDriven / data.liters).toFixed(2));
+        }
+      }
+
+      let txId: string | undefined;
+      const autoDebit = options?.autoDebitAccount !== false;
+      if (autoDebit && data.paidFromAccountId && data.totalCost > 0) {
+        txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+        const newTx: Transaction = {
+          id: txId,
+          type: 'expense',
+          amount: data.totalCost,
+          categoryId: 'cat-transport',
+          accountId: data.paidFromAccountId,
+          date: data.date || new Date().toISOString(),
+          note: `Fuel: ${targetVeh ? targetVeh.name : 'Vehicle'} (${data.liters}L @ Rs.${data.pricePerLiter})${data.stationName ? ' - ' + data.stationName : ''}`,
+          imageUri: data.slipImageUri,
+          tags: ['#fuel-log', `#vehicle-${data.vehicleId}`],
+        };
+
+        const updatedTxs = [newTx, ...transactions];
+        setTransactions(updatedTxs);
+        await StorageService.saveTransactions(updatedTxs);
+
+        const updatedAccounts = accounts.map((acc) => {
+          if (acc.id === data.paidFromAccountId) {
+            const isLiability = acc.isLiability || acc.type === 'card' || acc.type === 'loan';
+            const delta = isLiability ? data.totalCost : -data.totalCost;
+            return { ...acc, balance: acc.balance + delta };
+          }
+          return acc;
+        });
+        setAccounts(updatedAccounts);
+        await StorageService.saveAccounts(updatedAccounts);
+      }
+
+      const newLog: FuelLog = {
+        ...data,
+        id: logId,
+        distanceDriven: data.distanceDriven !== undefined ? data.distanceDriven : distanceDriven,
+        fuelEfficiencyKmPerLiter: data.fuelEfficiencyKmPerLiter !== undefined ? data.fuelEfficiencyKmPerLiter : fuelEfficiencyKmPerLiter,
+        linkedTransactionId: txId,
+      };
+
+      const updatedLogs = [newLog, ...fuelLogs];
+      setFuelLogs(updatedLogs);
+      await StorageService.saveFuelLogs(updatedLogs);
+
+      if (targetVeh && data.odometer > targetVeh.currentOdometer) {
+        const updatedVehicles = vehicles.map((v) =>
+          v.id === targetVeh.id ? { ...v, currentOdometer: data.odometer } : v
+        );
+        setVehicles(updatedVehicles);
+        await StorageService.saveVehicles(updatedVehicles);
+      }
+    },
+    [vehicles, fuelLogs, transactions, accounts]
+  );
+
+  const deleteFuelLog = useCallback(
+    async (id: string) => {
+      const logToDelete = fuelLogs.find((l) => l.id === id);
+      if (!logToDelete) return;
+
+      if (logToDelete.linkedTransactionId) {
+        const updatedTxs = transactions.filter((t) => t.id !== logToDelete.linkedTransactionId);
+        setTransactions(updatedTxs);
+        await StorageService.saveTransactions(updatedTxs);
+
+        const updatedAccounts = accounts.map((acc) => {
+          if (acc.id === logToDelete.paidFromAccountId) {
+            const isLiability = acc.isLiability || acc.type === 'card' || acc.type === 'loan';
+            const delta = isLiability ? -logToDelete.totalCost : logToDelete.totalCost;
+            return { ...acc, balance: acc.balance + delta };
+          }
+          return acc;
+        });
+        setAccounts(updatedAccounts);
+        await StorageService.saveAccounts(updatedAccounts);
+      }
+
+      const updatedLogs = fuelLogs.filter((l) => l.id !== id);
+      setFuelLogs(updatedLogs);
+      await StorageService.saveFuelLogs(updatedLogs);
+    },
+    [fuelLogs, transactions, accounts]
+  );
+
+  const addServiceRecord = useCallback(
+    async (data: Omit<ServiceRecord, 'id'>, options?: { autoDebitAccount?: boolean }) => {
+      const srvId = `srv-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const targetVeh = vehicles.find((v) => v.id === data.vehicleId);
+
+      let txId: string | undefined;
+      const autoDebit = options?.autoDebitAccount !== false;
+      if (autoDebit && data.paidFromAccountId && data.cost > 0) {
+        txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+        const newTx: Transaction = {
+          id: txId,
+          type: 'expense',
+          amount: data.cost,
+          categoryId: 'cat-transport',
+          accountId: data.paidFromAccountId,
+          date: data.date || new Date().toISOString(),
+          note: `Vehicle Service: ${targetVeh ? targetVeh.name : 'Vehicle'} - ${data.title}${data.workshopName ? ' (' + data.workshopName + ')' : ''}`,
+          imageUri: data.slipImageUri,
+          tags: ['#vehicle-service', `#vehicle-${data.vehicleId}`],
+        };
+
+        const updatedTxs = [newTx, ...transactions];
+        setTransactions(updatedTxs);
+        await StorageService.saveTransactions(updatedTxs);
+
+        const updatedAccounts = accounts.map((acc) => {
+          if (acc.id === data.paidFromAccountId) {
+            const isLiability = acc.isLiability || acc.type === 'card' || acc.type === 'loan';
+            const delta = isLiability ? data.cost : -data.cost;
+            return { ...acc, balance: acc.balance + delta };
+          }
+          return acc;
+        });
+        setAccounts(updatedAccounts);
+        await StorageService.saveAccounts(updatedAccounts);
+      }
+
+      const newRecord: ServiceRecord = {
+        ...data,
+        id: srvId,
+        linkedTransactionId: txId,
+      };
+
+      const updatedRecords = [newRecord, ...serviceRecords];
+      setServiceRecords(updatedRecords);
+      await StorageService.saveServiceRecords(updatedRecords);
+
+      if (targetVeh) {
+        const nextKm = data.nextServiceDueOdometer || targetVeh.nextServiceOdometer;
+        const nextDt = data.nextServiceDueDate || targetVeh.nextServiceDate;
+        const curKm = Math.max(targetVeh.currentOdometer, data.odometer);
+
+        const updatedVehicles = vehicles.map((v) =>
+          v.id === targetVeh.id
+            ? {
+                ...v,
+                currentOdometer: curKm,
+                nextServiceOdometer: nextKm,
+                nextServiceDate: nextDt,
+              }
+            : v
+        );
+        setVehicles(updatedVehicles);
+        await StorageService.saveVehicles(updatedVehicles);
+      }
+    },
+    [vehicles, serviceRecords, transactions, accounts]
+  );
+
+  const deleteServiceRecord = useCallback(
+    async (id: string) => {
+      const recToDelete = serviceRecords.find((r) => r.id === id);
+      if (!recToDelete) return;
+
+      if (recToDelete.linkedTransactionId) {
+        const updatedTxs = transactions.filter((t) => t.id !== recToDelete.linkedTransactionId);
+        setTransactions(updatedTxs);
+        await StorageService.saveTransactions(updatedTxs);
+
+        const updatedAccounts = accounts.map((acc) => {
+          if (acc.id === recToDelete.paidFromAccountId) {
+            const isLiability = acc.isLiability || acc.type === 'card' || acc.type === 'loan';
+            const delta = isLiability ? -recToDelete.cost : recToDelete.cost;
+            return { ...acc, balance: acc.balance + delta };
+          }
+          return acc;
+        });
+        setAccounts(updatedAccounts);
+        await StorageService.saveAccounts(updatedAccounts);
+      }
+
+      const updatedRecords = serviceRecords.filter((r) => r.id !== id);
+      setServiceRecords(updatedRecords);
+      await StorageService.saveServiceRecords(updatedRecords);
+    },
+    [serviceRecords, transactions, accounts]
+  );
+
   // Monarch Wealth & Net Worth Breakdown
   const totalAssets = useMemo(() => {
     const accountAssets = accounts
@@ -1369,6 +1698,19 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       deleteLoanRepayment,
       addIncomeStream,
       deleteIncomeStream,
+      vehicles,
+      fuelLogs,
+      serviceRecords,
+      totalFuelCostThisMonth,
+      totalFuelLitersThisMonth,
+      upcomingServiceReminders,
+      addVehicle,
+      updateVehicle,
+      deleteVehicle,
+      addFuelLog,
+      deleteFuelLog,
+      addServiceRecord,
+      deleteServiceRecord,
     }),
     [
       loading,
@@ -1450,6 +1792,19 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       deleteLoanRepayment,
       addIncomeStream,
       deleteIncomeStream,
+      vehicles,
+      fuelLogs,
+      serviceRecords,
+      totalFuelCostThisMonth,
+      totalFuelLitersThisMonth,
+      upcomingServiceReminders,
+      addVehicle,
+      updateVehicle,
+      deleteVehicle,
+      addFuelLog,
+      deleteFuelLog,
+      addServiceRecord,
+      deleteServiceRecord,
     ]
   );
 

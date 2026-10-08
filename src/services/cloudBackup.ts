@@ -16,6 +16,9 @@ export interface RestorePreview {
   goalsCount: number;
   holdingsCount: number;
   loansCount?: number;
+  vehiclesCount?: number;
+  fuelLogsCount?: number;
+  serviceRecordsCount?: number;
 }
 
 export interface PickBackupResult {
@@ -57,6 +60,9 @@ export const CloudBackupService = {
         budgetsCount: snapshot.stats.budgetsCount,
         budgetItemsCount: snapshot.stats.budgetItemsCount,
         loansCount: snapshot.stats.loansCount,
+        vehiclesCount: snapshot.stats.vehiclesCount,
+        fuelLogsCount: snapshot.stats.fuelLogsCount,
+        serviceRecordsCount: snapshot.stats.serviceRecordsCount,
       };
 
       if (await Sharing.isAvailableAsync()) {
@@ -167,6 +173,9 @@ export const CloudBackupService = {
           rulesCount: rules.length,
           categoriesCount: categories.length,
           loansCount: loans.length,
+          vehiclesCount: (Array.isArray(data.vehicles) ? data.vehicles : []).length,
+          fuelLogsCount: (Array.isArray(data.fuelLogs) ? data.fuelLogs : []).length,
+          serviceRecordsCount: (Array.isArray(data.serviceRecords) ? data.serviceRecords : []).length,
         },
         data: {
           transactions,
@@ -198,6 +207,9 @@ export const CloudBackupService = {
         goalsCount: goals.length,
         holdingsCount: holdings.length,
         loansCount: loans.length,
+        vehiclesCount: normalizedPayload.stats.vehiclesCount,
+        fuelLogsCount: normalizedPayload.stats.fuelLogsCount,
+        serviceRecordsCount: normalizedPayload.stats.serviceRecordsCount,
       };
 
       return {

@@ -72,6 +72,11 @@ export default function SettingsScreen() {
     backupToGoogleDrive,
     pickBackupFromDrive,
     restoreFromBackupPayload,
+    loans,
+    incomeStreams,
+    vehicles,
+    fuelLogs,
+    serviceRecords,
   } = useFinancial();
 
   // Modals state
@@ -222,6 +227,11 @@ export default function SettingsScreen() {
         holdings,
         rules,
         settings,
+        loans,
+        incomeStreams,
+        vehicles,
+        fuelLogs,
+        serviceRecords,
         exportedAt: new Date().toISOString(),
       });
     } catch {
@@ -520,6 +530,31 @@ export default function SettingsScreen() {
 
             <View style={styles.menuDivider} />
 
+            {/* Vehicles & Fuel Fleet Monitor Option */}
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => router.push('/vehicles')}
+              accessibilityRole="button"
+              accessibilityLabel="Vehicles, Fuel Logs and Service Reminders"
+            >
+              <View style={styles.menuLeft}>
+                <View style={[styles.menuIconWrap, { backgroundColor: '#3B82F625' }]}>
+                  <Ionicons name="car-outline" size={18} color="#3B82F6" />
+                </View>
+                <View>
+                  <Text style={styles.menuTitle}>Vehicles & Fuel Logs</Text>
+                  <Text style={styles.menuSubtitle}>
+                    Track mileage, fuel consumption & service due
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.menuRight}>
+                <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
+              </View>
+            </Pressable>
+
+            <View style={styles.menuDivider} />
+
             {/* Currency Option */}
             <Pressable
               style={styles.menuItem}
@@ -735,6 +770,14 @@ export default function SettingsScreen() {
               <View style={styles.statBox}>
                 <Text style={styles.statNum}>{holdings.length}</Text>
                 <Text style={styles.statDesc}>Holdings</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statNum}>{vehicles.length}</Text>
+                <Text style={styles.statDesc}>Vehicles</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statNum}>{fuelLogs.length}</Text>
+                <Text style={styles.statDesc}>Fuel Logs</Text>
               </View>
             </View>
           </Card>

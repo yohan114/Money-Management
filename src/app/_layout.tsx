@@ -158,6 +158,44 @@ function AppContent() {
           }}
         />
         <Stack.Screen
+          name="modal/vehicle"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="modal/fuel-log"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="modal/service-record"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="vehicles/index"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen
+          name="vehicles/[id]"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen
           name="budget/[id]"
           options={{
             headerShown: false,

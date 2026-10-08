@@ -56,6 +56,9 @@ export default function DashboardScreen() {
     loans,
     totalBorrowedDebt,
     upcomingLoanReminders,
+    vehicles,
+    totalFuelCostThisMonth,
+    upcomingServiceReminders,
   } = useFinancial();
 
   const [hideBalance, setHideBalance] = useState(false);
@@ -465,6 +468,49 @@ export default function DashboardScreen() {
                   {totalBorrowedDebt > 0
                     ? `Remaining Debt: ${formatAmount(totalBorrowedDebt)} • ${loans.filter((l) => l.status === 'active').length} active`
                     : 'Manage income streams & track borrowed loans'}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
+          </Card>
+        </Pressable>
+
+        {/* Vehicle Fleet & Fuel Monitor Banner */}
+        <Pressable
+          onPress={() => router.push('/vehicles')}
+          style={({ pressed }) => [styles.debtBannerPressable, pressed && { opacity: 0.9 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Open Vehicle Fleet and Fuel Hub"
+        >
+          <Card elevated style={styles.debtBannerCard}>
+            <View style={styles.debtBannerLeft}>
+              <View
+                style={[
+                  styles.debtBannerIcon,
+                  { backgroundColor: '#3B82F625' },
+                ]}
+              >
+                <Ionicons
+                  name="car-sport"
+                  size={20}
+                  color="#3B82F6"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.debtBannerTitle}>Vehicle Fleet & Fuel</Text>
+                  {upcomingServiceReminders.length > 0 && (
+                    <View style={styles.debtDueBadge}>
+                      <Text style={styles.debtDueBadgeText}>
+                        {upcomingServiceReminders.length} Service Due
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.debtBannerSub}>
+                  {vehicles.length > 0
+                    ? `Fuel this mo: ${formatAmount(totalFuelCostThisMonth)} • ${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''}`
+                    : 'Track fuel consumption, logs & service reminders'}
                 </Text>
               </View>
             </View>
