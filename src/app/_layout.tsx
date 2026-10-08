@@ -128,6 +128,14 @@ function AppContent() {
           }}
         />
         <Stack.Screen
+          name="modal/cloud-sync"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
           name="budget/[id]"
           options={{
             headerShown: false,

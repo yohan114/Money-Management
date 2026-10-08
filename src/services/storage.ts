@@ -9,10 +9,12 @@ import {
   FinancialGoal,
   InvestmentHolding,
   TransactionRule,
+  CloudBackupMetadata,
+  CloudBackupPayload,
 } from '../types';
 import { DEFAULT_CATEGORIES, DEFAULT_ACCOUNTS } from '../constants/theme';
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   TRANSACTIONS: '@money_management_transactions_v4',
   CATEGORIES: '@money_management_categories_v4',
   ACCOUNTS: '@money_management_accounts_v4',
@@ -23,6 +25,11 @@ const STORAGE_KEYS = {
   RULES: '@money_management_rules_v4',
   SETTINGS: '@money_management_settings_v4',
   INITIALIZED: '@money_management_initialized_v4',
+  LAST_BACKUP: '@money_management_last_backup_v4',
+  LOANS: '@money_management_loans_v4',
+  VEHICLES: '@money_management_vehicles_v4',
+  FUEL_LOGS: '@money_management_fuel_logs_v4',
+  SERVICE_RECORDS: '@money_management_service_records_v4',
 };
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -489,6 +496,133 @@ export const StorageService = {
     ]);
   },
 
+  // Cloud Backup & Restore Methods
+  async getLastBackupMetadata(): Promise<CloudBackupMetadata | null> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.LAST_BACKUP);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async saveLastBackupMetadata(meta: CloudBackupMetadata): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.LAST_BACKUP, JSON.stringify(meta));
+    } catch (e) {
+      console.error('Failed to save last backup metadata:', e);
+    }
+  },
+
+  async getFullDatabaseSnapshot(): Promise<CloudBackupPayload> {
+    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets] = await Promise.all([
+      this.getTransactions(),
+      this.getCategories(),
+      this.getAccounts(),
+      this.getBudgets(),
+      this.getRecurring(),
+      this.getGoals(),
+      this.getHoldings(),
+      this.getRules(),
+      this.getSettings(),
+    ]);
+
+    // Optional future models (loans, vehicles)
+    let loans: any[] = [];
+    let vehicles: any[] = [];
+    let fuelLogs: any[] = [];
+    let serviceRecords: any[] = [];
+    try {
+      const [lData, vData, fData, sData] = await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEYS.LOANS),
+        AsyncStorage.getItem(STORAGE_KEYS.VEHICLES),
+        AsyncStorage.getItem(STORAGE_KEYS.FUEL_LOGS),
+        AsyncStorage.getItem(STORAGE_KEYS.SERVICE_RECORDS),
+      ]);
+      if (lData) loans = JSON.parse(lData);
+      if (vData) vehicles = JSON.parse(vData);
+      if (fData) fuelLogs = JSON.parse(fData);
+      if (sData) serviceRecords = JSON.parse(sData);
+    } catch {
+      // ignore
+    }
+
+    const budgetItemsCount = bdgs.reduce(
+      (sum, b) => sum + (Array.isArray(b.items) ? b.items.length : 0),
+      0
+    );
+
+    return {
+      schemaVersion: 1,
+      appName: 'MoneyManagementApp',
+      appVersion: '1.4.0',
+      exportedAt: new Date().toISOString(),
+      stats: {
+        accountsCount: accs.length,
+        transactionsCount: txs.length,
+        budgetsCount: bdgs.length,
+        budgetItemsCount,
+        recurringCount: recs.length,
+        goalsCount: gls.length,
+        holdingsCount: hlds.length,
+        rulesCount: rls.length,
+        categoriesCount: cats.length,
+      },
+      data: {
+        transactions: txs,
+        categories: cats,
+        accounts: accs,
+        budgets: bdgs,
+        recurringItems: recs,
+        goals: gls,
+        holdings: hlds,
+        rules: rls,
+        settings: sets,
+        loans,
+        vehicles,
+        fuelLogs,
+        serviceRecords,
+      },
+    };
+  },
+
+  async restoreFullDatabaseSnapshot(snapshot: CloudBackupPayload): Promise<void> {
+    const data = snapshot.data || (snapshot as any); // Supports both structured payload and flat legacy dumps
+
+    const txs = Array.isArray(data.transactions) ? data.transactions : [];
+    const cats = Array.isArray(data.categories) && data.categories.length > 0 ? data.categories : DEFAULT_CATEGORIES;
+    const accs = Array.isArray(data.accounts) && data.accounts.length > 0 ? data.accounts : DEFAULT_ACCOUNTS;
+    const bdgs = Array.isArray(data.budgets) ? data.budgets : [];
+    const recs = Array.isArray(data.recurringItems) ? data.recurringItems : (Array.isArray((data as any).recurring) ? (data as any).recurring : []);
+    const gls = Array.isArray(data.goals) ? data.goals : [];
+    const hlds = Array.isArray(data.holdings) ? data.holdings : [];
+    const rls = Array.isArray(data.rules) ? data.rules : [];
+    const sets = data.settings && typeof data.settings === 'object' ? { ...DEFAULT_SETTINGS, ...data.settings } : DEFAULT_SETTINGS;
+    const loans = Array.isArray(data.loans) ? data.loans : [];
+    const vehicles = Array.isArray(data.vehicles) ? data.vehicles : [];
+    const fuelLogs = Array.isArray(data.fuelLogs) ? data.fuelLogs : [];
+    const serviceRecords = Array.isArray(data.serviceRecords) ? data.serviceRecords : [];
+
+    const pairs: [string, string][] = [
+      [STORAGE_KEYS.TRANSACTIONS, JSON.stringify(txs)],
+      [STORAGE_KEYS.CATEGORIES, JSON.stringify(cats)],
+      [STORAGE_KEYS.ACCOUNTS, JSON.stringify(accs)],
+      [STORAGE_KEYS.BUDGETS, JSON.stringify(bdgs)],
+      [STORAGE_KEYS.RECURRING, JSON.stringify(recs)],
+      [STORAGE_KEYS.GOALS, JSON.stringify(gls)],
+      [STORAGE_KEYS.HOLDINGS, JSON.stringify(hlds)],
+      [STORAGE_KEYS.RULES, JSON.stringify(rls)],
+      [STORAGE_KEYS.SETTINGS, JSON.stringify(sets)],
+      [STORAGE_KEYS.LOANS, JSON.stringify(loans)],
+      [STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles)],
+      [STORAGE_KEYS.FUEL_LOGS, JSON.stringify(fuelLogs)],
+      [STORAGE_KEYS.SERVICE_RECORDS, JSON.stringify(serviceRecords)],
+      [STORAGE_KEYS.INITIALIZED, 'true'],
+    ];
+
+    await AsyncStorage.multiSet(pairs);
+  },
+
   // Clear all data back to clean fresh user state
   async clearAll(): Promise<void> {
     await AsyncStorage.multiSet([
@@ -499,6 +633,10 @@ export const StorageService = {
       [STORAGE_KEYS.HOLDINGS, JSON.stringify([])],
       [STORAGE_KEYS.RULES, JSON.stringify([])],
       [STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEFAULT_ACCOUNTS)],
+      [STORAGE_KEYS.LOANS, JSON.stringify([])],
+      [STORAGE_KEYS.VEHICLES, JSON.stringify([])],
+      [STORAGE_KEYS.FUEL_LOGS, JSON.stringify([])],
+      [STORAGE_KEYS.SERVICE_RECORDS, JSON.stringify([])],
     ]);
   },
 };

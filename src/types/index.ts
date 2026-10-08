@@ -133,3 +133,46 @@ export interface UserSettings {
   darkMode: boolean;
   biometricLock: boolean;
 }
+
+export interface CloudBackupMetadata {
+  lastBackupDate: string; // ISO 8601
+  fileName: string;
+  accountsCount: number;
+  transactionsCount: number;
+  budgetsCount: number;
+  budgetItemsCount: number;
+  totalNetWorth?: number;
+}
+
+export interface CloudBackupPayload {
+  schemaVersion: number;
+  appName: string;
+  appVersion: string;
+  exportedAt: string;
+  stats: {
+    accountsCount: number;
+    transactionsCount: number;
+    budgetsCount: number;
+    budgetItemsCount: number;
+    recurringCount: number;
+    goalsCount: number;
+    holdingsCount: number;
+    rulesCount: number;
+    categoriesCount: number;
+  };
+  data: {
+    transactions: Transaction[];
+    categories: Category[];
+    accounts: Account[];
+    budgets: Budget[];
+    recurringItems: RecurringItem[];
+    goals: FinancialGoal[];
+    holdings: InvestmentHolding[];
+    rules: TransactionRule[];
+    settings: UserSettings;
+    loans?: any[];
+    vehicles?: any[];
+    fuelLogs?: any[];
+    serviceRecords?: any[];
+  };
+}

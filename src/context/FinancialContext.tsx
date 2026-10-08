@@ -10,8 +10,11 @@ import {
   FinancialGoal,
   InvestmentHolding,
   TransactionRule,
+  CloudBackupMetadata,
+  CloudBackupPayload,
 } from '../types';
 import { StorageService, DEFAULT_SETTINGS } from '../services/storage';
+import { CloudBackupService, PickBackupResult } from '../services/cloudBackup';
 
 interface CategorySpend {
   category: Category;
@@ -121,6 +124,13 @@ interface FinancialContextValue {
   getCategoryById: (id: string) => Category | undefined;
   getAccountById: (id: string) => Account | undefined;
   getCategorySpentForMonth: (categoryId: string, month: string) => number;
+
+  // Google Drive Cloud Backup & Restore
+  lastBackupInfo: CloudBackupMetadata | null;
+  backupToGoogleDrive: () => Promise<CloudBackupMetadata>;
+  pickBackupFromDrive: () => Promise<PickBackupResult>;
+  restoreFromBackupPayload: (payload: CloudBackupPayload) => Promise<boolean>;
+  refreshAllData: () => Promise<void>;
 }
 
 const FinancialContext = createContext<FinancialContextValue | undefined>(undefined);
@@ -136,6 +146,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [holdings, setHoldings] = useState<InvestmentHolding[]>([]);
   const [rules, setRules] = useState<TransactionRule[]>([]);
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [lastBackupInfo, setLastBackupInfo] = useState<CloudBackupMetadata | null>(null);
 
   const currentYearMonth = useMemo(() => {
     const now = new Date();
@@ -155,7 +166,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const loadAllData = useCallback(async () => {
     setLoading(true);
     await StorageService.initFreshDataIfFirstTime();
-    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets] = await Promise.all([
+    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets, backupMeta] = await Promise.all([
       StorageService.getTransactions(),
       StorageService.getCategories(),
       StorageService.getAccounts(),
@@ -165,6 +176,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       StorageService.getHoldings(),
       StorageService.getRules(),
       StorageService.getSettings(),
+      StorageService.getLastBackupMetadata(),
     ]);
 
     setTransactions(txs);
@@ -176,6 +188,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setHoldings(hlds);
     setRules(rls);
     setSettings(sets);
+    setLastBackupInfo(backupMeta);
     setLoading(false);
   }, []);
 
@@ -754,6 +767,32 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     await loadAllData();
   }, [loadAllData]);
 
+  // Google Drive Cloud Backup Callbacks
+  const backupToGoogleDrive = useCallback(async () => {
+    const res = await CloudBackupService.exportDatabaseToDrive();
+    setLastBackupInfo(res.metadata);
+    return res.metadata;
+  }, []);
+
+  const pickBackupFromDrive = useCallback(async () => {
+    return CloudBackupService.pickBackupFromDrive();
+  }, []);
+
+  const restoreFromBackupPayload = useCallback(
+    async (payload: CloudBackupPayload) => {
+      setLoading(true);
+      const meta = await CloudBackupService.restoreDatabase(payload);
+      setLastBackupInfo(meta);
+      await loadAllData();
+      return true;
+    },
+    [loadAllData]
+  );
+
+  const refreshAllData = useCallback(async () => {
+    await loadAllData();
+  }, [loadAllData]);
+
   // Monarch Wealth & Net Worth Breakdown
   const totalAssets = useMemo(() => {
     const accountAssets = accounts
@@ -1014,6 +1053,11 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       getCategoryById,
       getAccountById,
       getCategorySpentForMonth,
+      lastBackupInfo,
+      backupToGoogleDrive,
+      pickBackupFromDrive,
+      restoreFromBackupPayload,
+      refreshAllData,
     }),
     [
       loading,
@@ -1076,6 +1120,11 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       getCategoryById,
       getAccountById,
       getCategorySpentForMonth,
+      lastBackupInfo,
+      backupToGoogleDrive,
+      pickBackupFromDrive,
+      restoreFromBackupPayload,
+      refreshAllData,
     ]
   );
 

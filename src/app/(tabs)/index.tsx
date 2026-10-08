@@ -125,14 +125,46 @@ export default function DashboardScreen() {
             </View>
           </View>
 
-          <Pressable
-            style={styles.headerIconBtn}
-            onPress={() => router.push('/(tabs)/settings')}
-            accessibilityLabel="Settings"
-          >
-            <Ionicons name="options-outline" size={20} color={COLORS.textPrimary} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Pressable
+              style={styles.headerIconBtn}
+              onPress={() => router.push('/modal/cloud-sync')}
+              accessibilityLabel="Google Drive Cloud Sync"
+            >
+              <Ionicons name="cloud-done-outline" size={20} color="#34A853" />
+            </Pressable>
+
+            <Pressable
+              style={styles.headerIconBtn}
+              onPress={() => router.push('/(tabs)/settings')}
+              accessibilityLabel="Settings"
+            >
+              <Ionicons name="options-outline" size={20} color={COLORS.textPrimary} />
+            </Pressable>
+          </View>
         </View>
+
+        {/* First run / Reinstall Restore Alert Banner */}
+        {transactions.length === 0 && (
+          <Pressable
+            style={styles.reinstallBanner}
+            onPress={() => router.push('/modal/cloud-sync')}
+            accessibilityRole="button"
+          >
+            <View style={styles.reinstallBannerIconWrap}>
+              <Ionicons name="cloud-download" size={20} color="#4285F4" />
+            </View>
+            <View style={styles.reinstallBannerTextWrap}>
+              <Text style={styles.reinstallBannerTitle}>
+                Reinstalled or Switched Phones?
+              </Text>
+              <Text style={styles.reinstallBannerSubtitle}>
+                Tap here to restore your records from Google Drive in 1 tap.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.primaryLight} />
+          </Pressable>
+        )}
 
         {/* Multi-Account Isolation Switcher (Salary vs Channery vs Company) */}
         <View style={styles.accountSwitcherContainer}>
@@ -994,5 +1026,38 @@ const styles = StyleSheet.create({
   },
   alignRight: {
     alignItems: 'flex-end',
+  },
+  reinstallBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: 'rgba(66, 133, 244, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(66, 133, 244, 0.3)',
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  reinstallBannerIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.sm,
+    backgroundColor: 'rgba(66, 133, 244, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reinstallBannerTextWrap: {
+    flex: 1,
+  },
+  reinstallBannerTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  reinstallBannerSubtitle: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
   },
 });

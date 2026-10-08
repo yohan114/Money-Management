@@ -9,6 +9,7 @@ import {
   Modal,
   TextInput,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -67,12 +68,18 @@ export default function SettingsScreen() {
     transactions,
     budgets,
     recurringItems,
+    lastBackupInfo,
+    backupToGoogleDrive,
+    pickBackupFromDrive,
+    restoreFromBackupPayload,
   } = useFinancial();
 
   // Modals state
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [currencySearchQuery, setCurrencySearchQuery] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [cloudSaving, setCloudSaving] = useState(false);
+  const [cloudRestoring, setCloudRestoring] = useState(false);
 
   // Rule Modal State
   const [ruleModalVisible, setRuleModalVisible] = useState(false);
@@ -221,6 +228,66 @@ export default function SettingsScreen() {
       Alert.alert('Export Failed', 'An error occurred while creating your JSON backup.');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleSaveToDrive = async () => {
+    try {
+      setCloudSaving(true);
+      const meta = await backupToGoogleDrive();
+      Alert.alert(
+        'Backup Created Successfully',
+        `Your database containing ${meta.accountsCount} accounts, ${meta.transactionsCount} transactions, and ${meta.budgetsCount} budgets is ready.\n\nOn the share menu, select 'Google Drive' ('Save to Drive') to store it securely in your personal cloud.`,
+        [{ text: 'OK' }]
+      );
+    } catch (e: any) {
+      Alert.alert('Backup Error', e?.message || 'Could not export backup to Google Drive.');
+    } finally {
+      setCloudSaving(false);
+    }
+  };
+
+  const handleRestoreFromDrive = async () => {
+    try {
+      setCloudRestoring(true);
+      const res = await pickBackupFromDrive();
+      if (res.canceled) {
+        setCloudRestoring(false);
+        return;
+      }
+      if (res.error || !res.payload || !res.preview) {
+        Alert.alert('Invalid Backup File', res.error || 'Could not parse backup file from Google Drive.');
+        setCloudRestoring(false);
+        return;
+      }
+
+      const { payload, preview } = res;
+      Alert.alert(
+        'Confirm Database Restore',
+        `Found backup file: ${preview.fileName}\nExported: ${new Date(preview.exportedAt).toLocaleDateString()}\n\nContains:\n• ${preview.accountsCount} Accounts\n• ${preview.transactionsCount} Transactions\n• ${preview.budgetsCount} Budgets (${preview.budgetItemsCount} items)\n\nRestoring will link and replace your local records with this backup. Proceed?`,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => setCloudRestoring(false) },
+          {
+            text: 'Restore Now',
+            onPress: async () => {
+              try {
+                await restoreFromBackupPayload(payload);
+                Alert.alert(
+                  'Restore Successful!',
+                  'Your database has been restored and linked back successfully from Google Drive.'
+                );
+              } catch (err: any) {
+                Alert.alert('Restore Failed', err?.message || 'Could not restore database.');
+              } finally {
+                setCloudRestoring(false);
+              }
+            },
+          },
+        ]
+      );
+    } catch (e: any) {
+      Alert.alert('Restore Error', e?.message || 'Failed to select file from Google Drive.');
+      setCloudRestoring(false);
     }
   };
 
@@ -487,6 +554,86 @@ export default function SettingsScreen() {
                 </View>
               </View>
               <Ionicons name="lock-closed" size={16} color={COLORS.income} />
+            </View>
+          </Card>
+        </View>
+
+        {/* Google Drive Cloud Backup & Restore Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Cloud Backup & Sync</Text>
+            <Pressable
+              style={styles.cloudManageBtn}
+              onPress={() => router.push('/modal/cloud-sync')}
+              accessibilityRole="button"
+            >
+              <Text style={styles.cloudManageBtnText}>Sync Center</Text>
+              <Ionicons name="arrow-forward" size={12} color="#FFF" />
+            </Pressable>
+          </View>
+
+          <Card style={styles.cloudCard}>
+            <View style={styles.cloudHeader}>
+              <View style={styles.cloudIconBox}>
+                <Ionicons name="cloud-done" size={22} color="#34A853" />
+              </View>
+              <View style={styles.cloudInfo}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.cloudTitle}>Google Drive Cloud</Text>
+                  <View
+                    style={[
+                      styles.cloudBadge,
+                      { backgroundColor: lastBackupInfo ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)' },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.cloudBadgeText,
+                        { color: lastBackupInfo ? '#10B981' : '#F59E0B' },
+                      ]}
+                    >
+                      {lastBackupInfo ? 'SAVED' : 'NOT BACKED UP'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.cloudSubtitle}>
+                  {lastBackupInfo
+                    ? `Last saved: ${new Date(lastBackupInfo.lastBackupDate).toLocaleDateString()} (${lastBackupInfo.accountsCount} acc, ${lastBackupInfo.transactionsCount} txs)`
+                    : 'Prevent data loss when reinstalling or changing phones'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.cloudBtnRow}>
+              <Pressable
+                style={[styles.cloudActionBtn, { backgroundColor: '#34A853' }]}
+                onPress={handleSaveToDrive}
+                disabled={cloudSaving || cloudRestoring}
+              >
+                {cloudSaving ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload" size={15} color="#FFF" />
+                    <Text style={styles.cloudActionBtnText}>Save to Drive</Text>
+                  </>
+                )}
+              </Pressable>
+
+              <Pressable
+                style={[styles.cloudActionBtn, { backgroundColor: '#4285F4' }]}
+                onPress={handleRestoreFromDrive}
+                disabled={cloudSaving || cloudRestoring}
+              >
+                {cloudRestoring ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-download" size={15} color="#FFF" />
+                    <Text style={styles.cloudActionBtnText}>Restore from Drive</Text>
+                  </>
+                )}
+              </Pressable>
             </View>
           </Card>
         </View>
@@ -1360,6 +1507,82 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
   },
   emptyActionBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  cloudManageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.cardElevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+  },
+  cloudManageBtnText: {
+    color: COLORS.primaryLight,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  cloudCard: {
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 168, 83, 0.25)',
+  },
+  cloudHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  cloudIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(52, 168, 83, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cloudInfo: {
+    flex: 1,
+  },
+  cloudTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  cloudBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.xs,
+  },
+  cloudBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  cloudSubtitle: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  cloudBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  cloudActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: RADIUS.sm,
+  },
+  cloudActionBtnText: {
     color: '#FFF',
     fontSize: 12,
     fontWeight: '700',
