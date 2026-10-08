@@ -495,6 +495,31 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Preferences</Text>
 
           <Card style={styles.menuCard}>
+            {/* Income & Debts Hub */}
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => router.push('/loans')}
+              accessibilityRole="button"
+              accessibilityLabel="Income Ledgers and Loan Tracker"
+            >
+              <View style={styles.menuLeft}>
+                <View style={[styles.menuIconWrap, { backgroundColor: '#F59E0B25' }]}>
+                  <Ionicons name="wallet-outline" size={18} color="#F59E0B" />
+                </View>
+                <View>
+                  <Text style={styles.menuTitle}>Income Ledgers & Loans</Text>
+                  <Text style={styles.menuSubtitle}>
+                    Manage income streams & track borrowed debts
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.menuRight}>
+                <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
+              </View>
+            </Pressable>
+
+            <View style={styles.menuDivider} />
+
             {/* Currency Option */}
             <Pressable
               style={styles.menuItem}

@@ -11,8 +11,51 @@ import {
   TransactionRule,
   CloudBackupMetadata,
   CloudBackupPayload,
+  Loan,
+  IncomeStream,
 } from '../types';
 import { DEFAULT_CATEGORIES, DEFAULT_ACCOUNTS } from '../constants/theme';
+
+export const DEFAULT_INCOME_STREAMS: IncomeStream[] = [
+  {
+    id: 'stream-salary',
+    name: 'Primary Salary',
+    category: 'salary',
+    expectedMonthlyAmount: 100000,
+    defaultAccountId: 'acc-salary',
+    icon: 'briefcase',
+    color: '#3B82F6',
+  },
+  {
+    id: 'stream-friend-loan',
+    name: 'Friend & Personal Loans',
+    category: 'friend_loan',
+    icon: 'people',
+    color: '#EC4899',
+  },
+  {
+    id: 'stream-part-time',
+    name: 'Part-Time & Freelance Job',
+    category: 'part_time',
+    icon: 'laptop',
+    color: '#10B981',
+  },
+  {
+    id: 'stream-biz',
+    name: 'Coconut / Business Supply',
+    category: 'business',
+    defaultAccountId: 'acc-company',
+    icon: 'leaf',
+    color: '#F59E0B',
+  },
+  {
+    id: 'stream-other',
+    name: 'Other Inflows',
+    category: 'other',
+    icon: 'cash',
+    color: '#8B5CF6',
+  },
+];
 
 export const STORAGE_KEYS = {
   TRANSACTIONS: '@money_management_transactions_v4',
@@ -27,6 +70,7 @@ export const STORAGE_KEYS = {
   INITIALIZED: '@money_management_initialized_v4',
   LAST_BACKUP: '@money_management_last_backup_v4',
   LOANS: '@money_management_loans_v4',
+  INCOME_STREAMS: '@money_management_income_streams_v4',
   VEHICLES: '@money_management_vehicles_v4',
   FUEL_LOGS: '@money_management_fuel_logs_v4',
   SERVICE_RECORDS: '@money_management_service_records_v4',
@@ -332,6 +376,91 @@ export const DEMO_ACCOUNTS: Account[] = [
   { id: 'acc-credit-card', name: 'Credit Cards & Loans', type: 'card', balance: 48000, icon: 'card', color: '#EC4899', isLiability: true },
 ];
 
+export const SAMPLE_LOANS: Loan[] = [
+  {
+    id: 'loan-01',
+    lenderName: 'Kasun (Friend Loan)',
+    type: 'friend',
+    totalAmount: 50000,
+    receivedDate: getRelativeDateISO(25),
+    dueDate: '2026-11-15',
+    depositAccountId: 'acc-salary',
+    purpose: 'Urgent household medical and repair bill',
+    status: 'active',
+    spendingItems: [
+      {
+        id: 'lsp-01',
+        loanId: 'loan-01',
+        title: 'Emergency Medical Treatment',
+        amount: 32000,
+        date: getRelativeDateISO(24),
+      },
+      {
+        id: 'lsp-02',
+        loanId: 'loan-01',
+        title: 'House Roof Water Leak Repair',
+        amount: 18000,
+        date: getRelativeDateISO(22),
+      },
+    ],
+    repayments: [
+      {
+        id: 'lrp-01',
+        loanId: 'loan-01',
+        amount: 15000,
+        date: getRelativeDateISO(5),
+        paidFromAccountId: 'acc-salary',
+        note: 'First installment paid back via online transfer',
+      },
+    ],
+  },
+  {
+    id: 'loan-02',
+    lenderName: 'Commercial Bank Personal Loan',
+    type: 'bank',
+    totalAmount: 200000,
+    receivedDate: getRelativeDateISO(60),
+    dueDate: '2027-01-30',
+    depositAccountId: 'acc-salary',
+    purpose: 'House construction advance',
+    status: 'active',
+    spendingItems: [
+      {
+        id: 'lsp-03',
+        loanId: 'loan-02',
+        title: 'Cement & Building Materials',
+        amount: 140000,
+        date: getRelativeDateISO(58),
+      },
+      {
+        id: 'lsp-04',
+        loanId: 'loan-02',
+        title: 'Labor Advance Payment',
+        amount: 60000,
+        date: getRelativeDateISO(50),
+      },
+    ],
+    repayments: [
+      {
+        id: 'lrp-02',
+        loanId: 'loan-02',
+        amount: 40000,
+        date: getRelativeDateISO(30),
+        paidFromAccountId: 'acc-salary',
+        note: 'Month 1 installment',
+      },
+      {
+        id: 'lrp-03',
+        loanId: 'loan-02',
+        amount: 40000,
+        date: getRelativeDateISO(2),
+        paidFromAccountId: 'acc-salary',
+        note: 'Month 2 installment',
+      },
+    ],
+  },
+];
+
 export const StorageService = {
   // Brand new installs start 100% clean and fresh with NO dummy data!
   async initFreshDataIfFirstTime(): Promise<boolean> {
@@ -348,6 +477,8 @@ export const StorageService = {
           [STORAGE_KEYS.HOLDINGS, JSON.stringify([])], // Clean empty investment holdings!
           [STORAGE_KEYS.RULES, JSON.stringify([])], // Clean empty rules!
           [STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS)],
+          [STORAGE_KEYS.LOANS, JSON.stringify([])], // Clean empty loans!
+          [STORAGE_KEYS.INCOME_STREAMS, JSON.stringify(DEFAULT_INCOME_STREAMS)],
           [STORAGE_KEYS.INITIALIZED, 'true'],
         ]);
         return true;
@@ -481,6 +612,39 @@ export const StorageService = {
     await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
   },
 
+  // Loans & Income Streams
+  async getLoans(): Promise<Loan[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.LOANS);
+      if (!data) return [];
+      const parsed: Loan[] = JSON.parse(data);
+      return parsed.map((l) => ({
+        ...l,
+        spendingItems: Array.isArray(l.spendingItems) ? l.spendingItems : [],
+        repayments: Array.isArray(l.repayments) ? l.repayments : [],
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  async saveLoans(loans: Loan[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(loans));
+  },
+
+  async getIncomeStreams(): Promise<IncomeStream[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.INCOME_STREAMS);
+      return data ? JSON.parse(data) : DEFAULT_INCOME_STREAMS;
+    } catch {
+      return DEFAULT_INCOME_STREAMS;
+    }
+  },
+
+  async saveIncomeStreams(streams: IncomeStream[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.INCOME_STREAMS, JSON.stringify(streams));
+  },
+
   // Optional manual demo populator (from Settings screen)
   async resetToDemo(): Promise<void> {
     await AsyncStorage.multiSet([
@@ -492,6 +656,8 @@ export const StorageService = {
       [STORAGE_KEYS.GOALS, JSON.stringify(SAMPLE_GOALS)],
       [STORAGE_KEYS.HOLDINGS, JSON.stringify(SAMPLE_HOLDINGS)],
       [STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS)],
+      [STORAGE_KEYS.LOANS, JSON.stringify(SAMPLE_LOANS)],
+      [STORAGE_KEYS.INCOME_STREAMS, JSON.stringify(DEFAULT_INCOME_STREAMS)],
       [STORAGE_KEYS.INITIALIZED, 'true'],
     ]);
   },
@@ -515,7 +681,7 @@ export const StorageService = {
   },
 
   async getFullDatabaseSnapshot(): Promise<CloudBackupPayload> {
-    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets] = await Promise.all([
+    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets, loans, streams] = await Promise.all([
       this.getTransactions(),
       this.getCategories(),
       this.getAccounts(),
@@ -525,21 +691,20 @@ export const StorageService = {
       this.getHoldings(),
       this.getRules(),
       this.getSettings(),
+      this.getLoans(),
+      this.getIncomeStreams(),
     ]);
 
-    // Optional future models (loans, vehicles)
-    let loans: any[] = [];
+    // Optional future vehicle models
     let vehicles: any[] = [];
     let fuelLogs: any[] = [];
     let serviceRecords: any[] = [];
     try {
-      const [lData, vData, fData, sData] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.LOANS),
+      const [vData, fData, sData] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.VEHICLES),
         AsyncStorage.getItem(STORAGE_KEYS.FUEL_LOGS),
         AsyncStorage.getItem(STORAGE_KEYS.SERVICE_RECORDS),
       ]);
-      if (lData) loans = JSON.parse(lData);
       if (vData) vehicles = JSON.parse(vData);
       if (fData) fuelLogs = JSON.parse(fData);
       if (sData) serviceRecords = JSON.parse(sData);
@@ -555,7 +720,7 @@ export const StorageService = {
     return {
       schemaVersion: 1,
       appName: 'MoneyManagementApp',
-      appVersion: '1.4.0',
+      appVersion: '1.6.0',
       exportedAt: new Date().toISOString(),
       stats: {
         accountsCount: accs.length,
@@ -567,6 +732,7 @@ export const StorageService = {
         holdingsCount: hlds.length,
         rulesCount: rls.length,
         categoriesCount: cats.length,
+        loansCount: loans.length,
       },
       data: {
         transactions: txs,
@@ -579,6 +745,7 @@ export const StorageService = {
         rules: rls,
         settings: sets,
         loans,
+        incomeStreams: streams,
         vehicles,
         fuelLogs,
         serviceRecords,
@@ -599,6 +766,7 @@ export const StorageService = {
     const rls = Array.isArray(data.rules) ? data.rules : [];
     const sets = data.settings && typeof data.settings === 'object' ? { ...DEFAULT_SETTINGS, ...data.settings } : DEFAULT_SETTINGS;
     const loans = Array.isArray(data.loans) ? data.loans : [];
+    const streams = Array.isArray(data.incomeStreams) && data.incomeStreams.length > 0 ? data.incomeStreams : DEFAULT_INCOME_STREAMS;
     const vehicles = Array.isArray(data.vehicles) ? data.vehicles : [];
     const fuelLogs = Array.isArray(data.fuelLogs) ? data.fuelLogs : [];
     const serviceRecords = Array.isArray(data.serviceRecords) ? data.serviceRecords : [];
@@ -614,6 +782,7 @@ export const StorageService = {
       [STORAGE_KEYS.RULES, JSON.stringify(rls)],
       [STORAGE_KEYS.SETTINGS, JSON.stringify(sets)],
       [STORAGE_KEYS.LOANS, JSON.stringify(loans)],
+      [STORAGE_KEYS.INCOME_STREAMS, JSON.stringify(streams)],
       [STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles)],
       [STORAGE_KEYS.FUEL_LOGS, JSON.stringify(fuelLogs)],
       [STORAGE_KEYS.SERVICE_RECORDS, JSON.stringify(serviceRecords)],
@@ -634,6 +803,7 @@ export const StorageService = {
       [STORAGE_KEYS.RULES, JSON.stringify([])],
       [STORAGE_KEYS.ACCOUNTS, JSON.stringify(DEFAULT_ACCOUNTS)],
       [STORAGE_KEYS.LOANS, JSON.stringify([])],
+      [STORAGE_KEYS.INCOME_STREAMS, JSON.stringify(DEFAULT_INCOME_STREAMS)],
       [STORAGE_KEYS.VEHICLES, JSON.stringify([])],
       [STORAGE_KEYS.FUEL_LOGS, JSON.stringify([])],
       [STORAGE_KEYS.SERVICE_RECORDS, JSON.stringify([])],

@@ -12,6 +12,10 @@ import {
   TransactionRule,
   CloudBackupMetadata,
   CloudBackupPayload,
+  Loan,
+  LoanRepayment,
+  LoanSpendingItem,
+  IncomeStream,
 } from '../types';
 import { StorageService, DEFAULT_SETTINGS } from '../services/storage';
 import { CloudBackupService, PickBackupResult } from '../services/cloudBackup';
@@ -131,6 +135,31 @@ interface FinancialContextValue {
   pickBackupFromDrive: () => Promise<PickBackupResult>;
   restoreFromBackupPayload: (payload: CloudBackupPayload) => Promise<boolean>;
   refreshAllData: () => Promise<void>;
+
+  // Phase 2: Income Ledgers & Loan Tracker
+  loans: Loan[];
+  incomeStreams: IncomeStream[];
+  totalBorrowedDebt: number;
+  totalRepaidDebt: number;
+  upcomingLoanReminders: Loan[];
+  addLoan: (
+    data: Omit<Loan, 'id' | 'status'>,
+    options?: { autoCreditAccount?: boolean }
+  ) => Promise<void>;
+  updateLoan: (data: Loan) => Promise<void>;
+  deleteLoan: (id: string) => Promise<void>;
+  addLoanSpendingItem: (
+    loanId: string,
+    item: Omit<LoanSpendingItem, 'id' | 'loanId'>
+  ) => Promise<void>;
+  deleteLoanSpendingItem: (loanId: string, itemId: string) => Promise<void>;
+  recordLoanRepayment: (
+    loanId: string,
+    repayment: Omit<LoanRepayment, 'id' | 'loanId'>
+  ) => Promise<void>;
+  deleteLoanRepayment: (loanId: string, repaymentId: string) => Promise<void>;
+  addIncomeStream: (data: Omit<IncomeStream, 'id'>) => Promise<void>;
+  deleteIncomeStream: (id: string) => Promise<void>;
 }
 
 const FinancialContext = createContext<FinancialContextValue | undefined>(undefined);
@@ -147,6 +176,8 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [rules, setRules] = useState<TransactionRule[]>([]);
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [lastBackupInfo, setLastBackupInfo] = useState<CloudBackupMetadata | null>(null);
+  const [loans, setLoans] = useState<Loan[]>([]);
+  const [incomeStreams, setIncomeStreams] = useState<IncomeStream[]>([]);
 
   const currentYearMonth = useMemo(() => {
     const now = new Date();
@@ -166,7 +197,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const loadAllData = useCallback(async () => {
     setLoading(true);
     await StorageService.initFreshDataIfFirstTime();
-    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets, backupMeta] = await Promise.all([
+    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets, backupMeta, lns, strms] = await Promise.all([
       StorageService.getTransactions(),
       StorageService.getCategories(),
       StorageService.getAccounts(),
@@ -177,6 +208,8 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       StorageService.getRules(),
       StorageService.getSettings(),
       StorageService.getLastBackupMetadata(),
+      StorageService.getLoans(),
+      StorageService.getIncomeStreams(),
     ]);
 
     setTransactions(txs);
@@ -189,6 +222,8 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setRules(rls);
     setSettings(sets);
     setLastBackupInfo(backupMeta);
+    setLoans(lns);
+    setIncomeStreams(strms);
     setLoading(false);
   }, []);
 
@@ -793,6 +828,268 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     await loadAllData();
   }, [loadAllData]);
 
+  // Phase 2: Income Ledgers & Loan Actions
+  const totalBorrowedDebt = useMemo(() => {
+    return loans
+      .filter((l) => l.status === 'active')
+      .reduce((sum, l) => {
+        const repaid = (l.repayments || []).reduce((rSum, r) => rSum + r.amount, 0);
+        return sum + Math.max(0, l.totalAmount - repaid);
+      }, 0);
+  }, [loans]);
+
+  const totalRepaidDebt = useMemo(() => {
+    return loans.reduce((sum, l) => {
+      const repaid = (l.repayments || []).reduce((rSum, r) => rSum + r.amount, 0);
+      return sum + repaid;
+    }, 0);
+  }, [loans]);
+
+  const upcomingLoanReminders = useMemo(() => {
+    return loans
+      .filter((l) => l.status === 'active' && !!l.dueDate)
+      .sort((a, b) => {
+        const dateA = new Date(a.dueDate!).getTime();
+        const dateB = new Date(b.dueDate!).getTime();
+        return dateA - dateB;
+      });
+  }, [loans]);
+
+  const addLoan = useCallback(
+    async (
+      data: Omit<Loan, 'id' | 'status'>,
+      options?: { autoCreditAccount?: boolean }
+    ) => {
+      const loanId = `loan-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      let txId: string | undefined;
+
+      const autoCredit = options?.autoCreditAccount !== false;
+      if (autoCredit && data.depositAccountId && data.totalAmount > 0) {
+        txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+        const newTx: Transaction = {
+          id: txId,
+          type: 'income',
+          amount: data.totalAmount,
+          categoryId: 'cat-loans-inc',
+          accountId: data.depositAccountId,
+          date: data.receivedDate || new Date().toISOString(),
+          note: `Loan Inflow: ${data.lenderName}${data.purpose ? ' (' + data.purpose + ')' : ''}`,
+          tags: ['#loan-inflow', `#loan-${loanId}`],
+        };
+
+        const updatedTxs = [newTx, ...transactions];
+        setTransactions(updatedTxs);
+        await StorageService.saveTransactions(updatedTxs);
+
+        const updatedAccounts = accounts.map((acc) => {
+          if (acc.id === data.depositAccountId) {
+            return { ...acc, balance: acc.balance + data.totalAmount };
+          }
+          return acc;
+        });
+        setAccounts(updatedAccounts);
+        await StorageService.saveAccounts(updatedAccounts);
+      }
+
+      const newLoan: Loan = {
+        ...data,
+        id: loanId,
+        status: 'active',
+        spendingItems: data.spendingItems || [],
+        repayments: data.repayments || [],
+        linkedTransactionId: txId,
+      };
+
+      const updatedLoans = [newLoan, ...loans];
+      setLoans(updatedLoans);
+      await StorageService.saveLoans(updatedLoans);
+    },
+    [loans, transactions, accounts]
+  );
+
+  const updateLoan = useCallback(
+    async (data: Loan) => {
+      const updated = loans.map((l) => (l.id === data.id ? data : l));
+      setLoans(updated);
+      await StorageService.saveLoans(updated);
+    },
+    [loans]
+  );
+
+  const deleteLoan = useCallback(
+    async (id: string) => {
+      const updated = loans.filter((l) => l.id !== id);
+      setLoans(updated);
+      await StorageService.saveLoans(updated);
+    },
+    [loans]
+  );
+
+  const addLoanSpendingItem = useCallback(
+    async (loanId: string, itemData: Omit<LoanSpendingItem, 'id' | 'loanId'>) => {
+      const targetLoan = loans.find((l) => l.id === loanId);
+      if (!targetLoan) return;
+
+      const newItem: LoanSpendingItem = {
+        ...itemData,
+        id: `lsp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        loanId,
+      };
+
+      const currentItems = targetLoan.spendingItems || [];
+      const updatedLoan: Loan = {
+        ...targetLoan,
+        spendingItems: [...currentItems, newItem],
+      };
+
+      const updatedLoans = loans.map((l) => (l.id === loanId ? updatedLoan : l));
+      setLoans(updatedLoans);
+      await StorageService.saveLoans(updatedLoans);
+    },
+    [loans]
+  );
+
+  const deleteLoanSpendingItem = useCallback(
+    async (loanId: string, itemId: string) => {
+      const targetLoan = loans.find((l) => l.id === loanId);
+      if (!targetLoan) return;
+
+      const currentItems = targetLoan.spendingItems || [];
+      const updatedLoan: Loan = {
+        ...targetLoan,
+        spendingItems: currentItems.filter((i) => i.id !== itemId),
+      };
+
+      const updatedLoans = loans.map((l) => (l.id === loanId ? updatedLoan : l));
+      setLoans(updatedLoans);
+      await StorageService.saveLoans(updatedLoans);
+    },
+    [loans]
+  );
+
+  const recordLoanRepayment = useCallback(
+    async (
+      loanId: string,
+      repaymentData: Omit<LoanRepayment, 'id' | 'loanId'>
+    ) => {
+      const targetLoan = loans.find((l) => l.id === loanId);
+      if (!targetLoan) return;
+
+      const txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const newTx: Transaction = {
+        id: txId,
+        type: 'expense',
+        amount: repaymentData.amount,
+        categoryId: 'cat-repayments',
+        accountId: repaymentData.paidFromAccountId,
+        date: repaymentData.date || new Date().toISOString(),
+        note: `Loan Repayment to ${targetLoan.lenderName}${repaymentData.note ? ' - ' + repaymentData.note : ''}`,
+        imageUri: repaymentData.slipImageUri,
+        tags: ['#loan-repayment', `#loan-${loanId}`],
+      };
+
+      const updatedTxs = [newTx, ...transactions];
+      setTransactions(updatedTxs);
+      await StorageService.saveTransactions(updatedTxs);
+
+      const updatedAccounts = accounts.map((acc) => {
+        if (acc.id === repaymentData.paidFromAccountId) {
+          const isLiability = acc.isLiability || acc.type === 'card' || acc.type === 'loan';
+          const delta = isLiability ? repaymentData.amount : -repaymentData.amount;
+          return { ...acc, balance: acc.balance + delta };
+        }
+        return acc;
+      });
+      setAccounts(updatedAccounts);
+      await StorageService.saveAccounts(updatedAccounts);
+
+      const newRepayment: LoanRepayment = {
+        ...repaymentData,
+        id: `lrp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        loanId,
+        linkedTransactionId: txId,
+      };
+
+      const currentRepayments = targetLoan.repayments || [];
+      const allRepayments = [...currentRepayments, newRepayment];
+      const totalRepaid = allRepayments.reduce((sum, r) => sum + r.amount, 0);
+
+      const updatedLoan: Loan = {
+        ...targetLoan,
+        repayments: allRepayments,
+        status: totalRepaid >= targetLoan.totalAmount ? 'paid_off' : 'active',
+      };
+
+      const updatedLoans = loans.map((l) => (l.id === loanId ? updatedLoan : l));
+      setLoans(updatedLoans);
+      await StorageService.saveLoans(updatedLoans);
+    },
+    [loans, transactions, accounts]
+  );
+
+  const deleteLoanRepayment = useCallback(
+    async (loanId: string, repaymentId: string) => {
+      const targetLoan = loans.find((l) => l.id === loanId);
+      if (!targetLoan) return;
+
+      const repToDelete = (targetLoan.repayments || []).find((r) => r.id === repaymentId);
+      if (!repToDelete) return;
+
+      if (repToDelete.linkedTransactionId) {
+        const updatedTxs = transactions.filter((t) => t.id !== repToDelete.linkedTransactionId);
+        setTransactions(updatedTxs);
+        await StorageService.saveTransactions(updatedTxs);
+      }
+
+      const updatedAccounts = accounts.map((acc) => {
+        if (acc.id === repToDelete.paidFromAccountId) {
+          const isLiability = acc.isLiability || acc.type === 'card' || acc.type === 'loan';
+          const delta = isLiability ? -repToDelete.amount : repToDelete.amount;
+          return { ...acc, balance: acc.balance + delta };
+        }
+        return acc;
+      });
+      setAccounts(updatedAccounts);
+      await StorageService.saveAccounts(updatedAccounts);
+
+      const currentRepayments = (targetLoan.repayments || []).filter((r) => r.id !== repaymentId);
+      const totalRepaid = currentRepayments.reduce((sum, r) => sum + r.amount, 0);
+
+      const updatedLoan: Loan = {
+        ...targetLoan,
+        repayments: currentRepayments,
+        status: totalRepaid >= targetLoan.totalAmount ? 'paid_off' : 'active',
+      };
+
+      const updatedLoans = loans.map((l) => (l.id === loanId ? updatedLoan : l));
+      setLoans(updatedLoans);
+      await StorageService.saveLoans(updatedLoans);
+    },
+    [loans, transactions, accounts]
+  );
+
+  const addIncomeStream = useCallback(
+    async (data: Omit<IncomeStream, 'id'>) => {
+      const newStream: IncomeStream = {
+        ...data,
+        id: `stream-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      };
+      const updated = [...incomeStreams, newStream];
+      setIncomeStreams(updated);
+      await StorageService.saveIncomeStreams(updated);
+    },
+    [incomeStreams]
+  );
+
+  const deleteIncomeStream = useCallback(
+    async (id: string) => {
+      const updated = incomeStreams.filter((s) => s.id !== id);
+      setIncomeStreams(updated);
+      await StorageService.saveIncomeStreams(updated);
+    },
+    [incomeStreams]
+  );
+
   // Monarch Wealth & Net Worth Breakdown
   const totalAssets = useMemo(() => {
     const accountAssets = accounts
@@ -1058,6 +1355,20 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       pickBackupFromDrive,
       restoreFromBackupPayload,
       refreshAllData,
+      loans,
+      incomeStreams,
+      totalBorrowedDebt,
+      totalRepaidDebt,
+      upcomingLoanReminders,
+      addLoan,
+      updateLoan,
+      deleteLoan,
+      addLoanSpendingItem,
+      deleteLoanSpendingItem,
+      recordLoanRepayment,
+      deleteLoanRepayment,
+      addIncomeStream,
+      deleteIncomeStream,
     }),
     [
       loading,
@@ -1125,6 +1436,20 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       pickBackupFromDrive,
       restoreFromBackupPayload,
       refreshAllData,
+      loans,
+      incomeStreams,
+      totalBorrowedDebt,
+      totalRepaidDebt,
+      upcomingLoanReminders,
+      addLoan,
+      updateLoan,
+      deleteLoan,
+      addLoanSpendingItem,
+      deleteLoanSpendingItem,
+      recordLoanRepayment,
+      deleteLoanRepayment,
+      addIncomeStream,
+      deleteIncomeStream,
     ]
   );
 

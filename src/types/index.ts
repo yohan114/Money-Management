@@ -127,6 +127,57 @@ export interface CurrencyConfig {
   name: string;
 }
 
+export type LoanType = 'friend' | 'bank' | 'family' | 'personal' | 'business';
+export type LoanStatus = 'active' | 'paid_off';
+
+export interface LoanSpendingItem {
+  id: string;
+  loanId: string;
+  title: string;
+  amount: number;
+  date: string; // ISO 8601
+  note?: string;
+}
+
+export interface LoanRepayment {
+  id: string;
+  loanId: string;
+  amount: number;
+  date: string; // ISO 8601
+  paidFromAccountId: string;
+  slipImageUri?: string; // buying slip or receipt photo
+  note?: string;
+  linkedTransactionId?: string;
+}
+
+export interface Loan {
+  id: string;
+  lenderName: string; // e.g. "Kasun (Friend)", "Commercial Bank"
+  type: LoanType;
+  totalAmount: number;
+  receivedDate: string; // ISO 8601
+  dueDate?: string; // YYYY-MM-DD
+  depositAccountId: string;
+  purpose: string; // e.g. "House Advance", "Vehicle Repair"
+  status: LoanStatus;
+  notes?: string;
+  spendingItems?: LoanSpendingItem[];
+  repayments?: LoanRepayment[];
+  linkedTransactionId?: string;
+}
+
+export type IncomeStreamCategory = 'salary' | 'friend_loan' | 'part_time' | 'business' | 'rental' | 'other';
+
+export interface IncomeStream {
+  id: string;
+  name: string;
+  category: IncomeStreamCategory;
+  expectedMonthlyAmount?: number;
+  defaultAccountId?: string;
+  icon: string;
+  color: string;
+}
+
 export interface UserSettings {
   currency: string;
   currencySymbol: string;
@@ -141,6 +192,7 @@ export interface CloudBackupMetadata {
   transactionsCount: number;
   budgetsCount: number;
   budgetItemsCount: number;
+  loansCount?: number;
   totalNetWorth?: number;
 }
 
@@ -159,6 +211,7 @@ export interface CloudBackupPayload {
     holdingsCount: number;
     rulesCount: number;
     categoriesCount: number;
+    loansCount?: number;
   };
   data: {
     transactions: Transaction[];
@@ -170,7 +223,8 @@ export interface CloudBackupPayload {
     holdings: InvestmentHolding[];
     rules: TransactionRule[];
     settings: UserSettings;
-    loans?: any[];
+    loans?: Loan[];
+    incomeStreams?: IncomeStream[];
     vehicles?: any[];
     fuelLogs?: any[];
     serviceRecords?: any[];

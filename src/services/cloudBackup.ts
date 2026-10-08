@@ -15,6 +15,7 @@ export interface RestorePreview {
   recurringCount: number;
   goalsCount: number;
   holdingsCount: number;
+  loansCount?: number;
 }
 
 export interface PickBackupResult {
@@ -55,6 +56,7 @@ export const CloudBackupService = {
         transactionsCount: snapshot.stats.transactionsCount,
         budgetsCount: snapshot.stats.budgetsCount,
         budgetItemsCount: snapshot.stats.budgetItemsCount,
+        loansCount: snapshot.stats.loansCount,
       };
 
       if (await Sharing.isAvailableAsync()) {
@@ -118,6 +120,7 @@ export const CloudBackupService = {
         Array.isArray(data.accounts) ||
         Array.isArray(data.transactions) ||
         Array.isArray(data.budgets) ||
+        Array.isArray(data.loans) ||
         data.settings !== undefined;
 
       if (!hasCoreData) {
@@ -139,6 +142,8 @@ export const CloudBackupService = {
       const holdings = Array.isArray(data.holdings) ? data.holdings : [];
       const rules = Array.isArray(data.rules) ? data.rules : [];
       const categories = Array.isArray(data.categories) ? data.categories : [];
+      const loans = Array.isArray(data.loans) ? data.loans : [];
+      const incomeStreams = Array.isArray(data.incomeStreams) ? data.incomeStreams : undefined;
       const settings = data.settings || {};
 
       const budgetItemsCount = budgets.reduce(
@@ -149,7 +154,7 @@ export const CloudBackupService = {
       const normalizedPayload: CloudBackupPayload = {
         schemaVersion: parsed.schemaVersion || 1,
         appName: 'MoneyManagementApp',
-        appVersion: parsed.appVersion || '1.4.0',
+        appVersion: parsed.appVersion || '1.6.0',
         exportedAt: parsed.exportedAt || new Date().toISOString(),
         stats: {
           accountsCount: accounts.length,
@@ -161,6 +166,7 @@ export const CloudBackupService = {
           holdingsCount: holdings.length,
           rulesCount: rules.length,
           categoriesCount: categories.length,
+          loansCount: loans.length,
         },
         data: {
           transactions,
@@ -172,7 +178,8 @@ export const CloudBackupService = {
           holdings,
           rules,
           settings,
-          loans: Array.isArray(data.loans) ? data.loans : [],
+          loans,
+          incomeStreams,
           vehicles: Array.isArray(data.vehicles) ? data.vehicles : [],
           fuelLogs: Array.isArray(data.fuelLogs) ? data.fuelLogs : [],
           serviceRecords: Array.isArray(data.serviceRecords) ? data.serviceRecords : [],
@@ -190,6 +197,7 @@ export const CloudBackupService = {
         recurringCount: recurringItems.length,
         goalsCount: goals.length,
         holdingsCount: holdings.length,
+        loansCount: loans.length,
       };
 
       return {
@@ -220,6 +228,7 @@ export const CloudBackupService = {
         transactionsCount: payload.stats.transactionsCount,
         budgetsCount: payload.stats.budgetsCount,
         budgetItemsCount: payload.stats.budgetItemsCount,
+        loansCount: payload.stats.loansCount,
       };
 
       await StorageService.saveLastBackupMetadata(metadata);

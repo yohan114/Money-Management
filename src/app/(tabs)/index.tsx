@@ -53,6 +53,9 @@ export default function DashboardScreen() {
     deleteTransaction,
     selectedMonth,
     setSelectedMonth,
+    loans,
+    totalBorrowedDebt,
+    upcomingLoanReminders,
   } = useFinancial();
 
   const [hideBalance, setHideBalance] = useState(false);
@@ -425,6 +428,49 @@ export default function DashboardScreen() {
             <Text style={styles.actionBtnText}>+ Asset</Text>
           </Pressable>
         </View>
+
+        {/* Loans & Debt Monitor Banner */}
+        <Pressable
+          onPress={() => router.push('/loans')}
+          style={({ pressed }) => [styles.debtBannerPressable, pressed && { opacity: 0.9 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Open Income Ledgers and Loans Hub"
+        >
+          <Card elevated style={styles.debtBannerCard}>
+            <View style={styles.debtBannerLeft}>
+              <View
+                style={[
+                  styles.debtBannerIcon,
+                  { backgroundColor: totalBorrowedDebt > 0 ? COLORS.expenseBg : COLORS.primaryGlow },
+                ]}
+              >
+                <Ionicons
+                  name={totalBorrowedDebt > 0 ? 'cash-outline' : 'wallet-outline'}
+                  size={20}
+                  color={totalBorrowedDebt > 0 ? COLORS.expense : COLORS.primaryLight}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.debtBannerTitle}>Income Ledgers & Debts</Text>
+                  {upcomingLoanReminders.length > 0 && (
+                    <View style={styles.debtDueBadge}>
+                      <Text style={styles.debtDueBadgeText}>
+                        {upcomingLoanReminders.length} Due Soon
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.debtBannerSub}>
+                  {totalBorrowedDebt > 0
+                    ? `Remaining Debt: ${formatAmount(totalBorrowedDebt)} • ${loans.filter((l) => l.status === 'active').length} active`
+                    : 'Manage income streams & track borrowed loans'}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
+          </Card>
+        </Pressable>
 
         {/* Monarch Investments & Holdings Section */}
         <View style={styles.section}>
@@ -1059,5 +1105,53 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
     lineHeight: 15,
+  },
+  debtBannerPressable: {
+    marginBottom: SPACING.md,
+  },
+  debtBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.borderHighlight,
+  },
+  debtBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  debtBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  debtBannerTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  debtDueBadge: {
+    backgroundColor: COLORS.warningBg,
+    borderRadius: RADIUS.xs,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: COLORS.warning + '40',
+  },
+  debtDueBadgeText: {
+    color: COLORS.warning,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  debtBannerSub: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    marginTop: 2,
   },
 });
