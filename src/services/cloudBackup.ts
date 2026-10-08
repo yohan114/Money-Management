@@ -2,6 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { StorageService } from './storage';
+import { GoogleDriveService } from './googleDrive';
 import { CloudBackupMetadata, CloudBackupPayload } from '../types';
 
 export interface RestorePreview {
@@ -30,6 +31,140 @@ export interface PickBackupResult {
 
 export const CloudBackupService = {
   /**
+   * Normalizes any raw parsed JSON backup object into standard CloudBackupPayload and RestorePreview
+   */
+  normalizeBackupData(
+    parsed: any,
+    fileName: string = 'MoneyManagement_Backup.json',
+    fileSize?: number
+  ): { payload: CloudBackupPayload; preview: RestorePreview } {
+    const isWrapped = parsed && parsed.data && typeof parsed.data === 'object';
+    const data = isWrapped ? parsed.data : parsed;
+
+    const hasCoreData =
+      Array.isArray(data.accounts) ||
+      Array.isArray(data.transactions) ||
+      Array.isArray(data.budgets) ||
+      Array.isArray(data.loans) ||
+      data.settings !== undefined;
+
+    if (!hasCoreData) {
+      throw new Error('This file is not a valid Money Management backup document.');
+    }
+
+    const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+    const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+    const budgets = Array.isArray(data.budgets) ? data.budgets : [];
+    const recurringItems = Array.isArray(data.recurringItems)
+      ? data.recurringItems
+      : Array.isArray(data.recurring)
+      ? data.recurring
+      : [];
+    const goals = Array.isArray(data.goals) ? data.goals : [];
+    const holdings = Array.isArray(data.holdings) ? data.holdings : [];
+    const rules = Array.isArray(data.rules) ? data.rules : [];
+    const categories = Array.isArray(data.categories) ? data.categories : [];
+    const loans = Array.isArray(data.loans) ? data.loans : [];
+    const incomeStreams = Array.isArray(data.incomeStreams) ? data.incomeStreams : undefined;
+    const settings = data.settings || {};
+    const vehicles = Array.isArray(data.vehicles) ? data.vehicles : [];
+    const fuelLogs = Array.isArray(data.fuelLogs) ? data.fuelLogs : [];
+    const serviceRecords = Array.isArray(data.serviceRecords) ? data.serviceRecords : [];
+
+    const budgetItemsCount = budgets.reduce(
+      (sum: number, b: any) => sum + (Array.isArray(b?.items) ? b.items.length : 0),
+      0
+    );
+
+    const payload: CloudBackupPayload = {
+      schemaVersion: parsed.schemaVersion || 1,
+      appName: 'MoneyManagementApp',
+      appVersion: parsed.appVersion || '1.7.0',
+      exportedAt: parsed.exportedAt || new Date().toISOString(),
+      stats: {
+        accountsCount: accounts.length,
+        transactionsCount: transactions.length,
+        budgetsCount: budgets.length,
+        budgetItemsCount,
+        recurringCount: recurringItems.length,
+        goalsCount: goals.length,
+        holdingsCount: holdings.length,
+        rulesCount: rules.length,
+        categoriesCount: categories.length,
+        loansCount: loans.length,
+        vehiclesCount: vehicles.length,
+        fuelLogsCount: fuelLogs.length,
+        serviceRecordsCount: serviceRecords.length,
+      },
+      data: {
+        transactions,
+        categories,
+        accounts,
+        budgets,
+        recurringItems,
+        goals,
+        holdings,
+        rules,
+        settings,
+        loans,
+        incomeStreams,
+        vehicles,
+        fuelLogs,
+        serviceRecords,
+      },
+    };
+
+    const preview: RestorePreview = {
+      fileName,
+      fileSize,
+      exportedAt: payload.exportedAt,
+      accountsCount: accounts.length,
+      transactionsCount: transactions.length,
+      budgetsCount: budgets.length,
+      budgetItemsCount,
+      recurringCount: recurringItems.length,
+      goalsCount: goals.length,
+      holdingsCount: holdings.length,
+      loansCount: loans.length,
+      vehiclesCount: vehicles.length,
+      fuelLogsCount: fuelLogs.length,
+      serviceRecordsCount: serviceRecords.length,
+    };
+
+    return { payload, preview };
+  },
+
+  /**
+   * Backs up database directly to Google Drive via REST API if connected,
+   * otherwise opens system share sheet allowing the user to select 'Save to Drive'.
+   */
+  async backupToDrive(trigger: 'manual' | 'scheduled' | 'auto_change' = 'manual'): Promise<{
+    success: boolean;
+    metadata: CloudBackupMetadata;
+    isDirectSync: boolean;
+    filePath?: string;
+  }> {
+    const user = await StorageService.getGoogleUser();
+    if (user && user.accessToken) {
+      try {
+        const snapshot = await StorageService.getFullDatabaseSnapshot();
+        const res = await GoogleDriveService.uploadBackup(user.accessToken, snapshot, trigger);
+        return { success: true, metadata: res.metadata, isDirectSync: true };
+      } catch (err: any) {
+        console.warn('Direct Google Drive upload failed, falling back to share sheet:', err);
+      }
+    }
+
+    const shareRes = await this.exportDatabaseToDrive();
+    return {
+      success: shareRes.success,
+      metadata: shareRes.metadata,
+      isDirectSync: false,
+      filePath: shareRes.filePath,
+    };
+  },
+
+  /**
    * Compiles the full database snapshot and opens the Android native share sheet
    * allowing the user to select 'Google Drive' ('Save to Drive') to upload.
    */
@@ -44,7 +179,9 @@ export const CloudBackupService = {
 
       const now = new Date();
       const dateSlug = now.toISOString().split('T')[0];
-      const timeSlug = `${now.getHours()}${now.getMinutes()}`;
+      const timeSlug = `${String(now.getHours()).padStart(2, '0')}-${String(
+        now.getMinutes()
+      ).padStart(2, '0')}`;
       const fileName = `MoneyManagement_Backup_${dateSlug}_${timeSlug}.json`;
       const filePath = `${FileSystem.cacheDirectory}${fileName}`;
 
@@ -63,6 +200,7 @@ export const CloudBackupService = {
         vehiclesCount: snapshot.stats.vehiclesCount,
         fuelLogsCount: snapshot.stats.fuelLogsCount,
         serviceRecordsCount: snapshot.stats.serviceRecordsCount,
+        isDirectSync: false,
       };
 
       if (await Sharing.isAvailableAsync()) {
@@ -117,106 +255,19 @@ export const CloudBackupService = {
         };
       }
 
-      // Normalize either full CloudBackupPayload or legacy export format
-      const isWrapped = parsed && parsed.data && typeof parsed.data === 'object';
-      const data = isWrapped ? parsed.data : parsed;
-
-      // Validate presence of core financial collections
-      const hasCoreData =
-        Array.isArray(data.accounts) ||
-        Array.isArray(data.transactions) ||
-        Array.isArray(data.budgets) ||
-        Array.isArray(data.loans) ||
-        data.settings !== undefined;
-
-      if (!hasCoreData) {
+      try {
+        const { payload, preview } = this.normalizeBackupData(parsed, asset.name, asset.size);
         return {
           canceled: false,
-          error: 'This file is not a valid Money Management backup document.',
+          payload,
+          preview,
+        };
+      } catch (normErr: any) {
+        return {
+          canceled: false,
+          error: normErr?.message || 'Invalid backup structure',
         };
       }
-
-      const accounts = Array.isArray(data.accounts) ? data.accounts : [];
-      const transactions = Array.isArray(data.transactions) ? data.transactions : [];
-      const budgets = Array.isArray(data.budgets) ? data.budgets : [];
-      const recurringItems = Array.isArray(data.recurringItems)
-        ? data.recurringItems
-        : Array.isArray(data.recurring)
-        ? data.recurring
-        : [];
-      const goals = Array.isArray(data.goals) ? data.goals : [];
-      const holdings = Array.isArray(data.holdings) ? data.holdings : [];
-      const rules = Array.isArray(data.rules) ? data.rules : [];
-      const categories = Array.isArray(data.categories) ? data.categories : [];
-      const loans = Array.isArray(data.loans) ? data.loans : [];
-      const incomeStreams = Array.isArray(data.incomeStreams) ? data.incomeStreams : undefined;
-      const settings = data.settings || {};
-
-      const budgetItemsCount = budgets.reduce(
-        (sum: number, b: any) => sum + (Array.isArray(b?.items) ? b.items.length : 0),
-        0
-      );
-
-      const normalizedPayload: CloudBackupPayload = {
-        schemaVersion: parsed.schemaVersion || 1,
-        appName: 'MoneyManagementApp',
-        appVersion: parsed.appVersion || '1.6.0',
-        exportedAt: parsed.exportedAt || new Date().toISOString(),
-        stats: {
-          accountsCount: accounts.length,
-          transactionsCount: transactions.length,
-          budgetsCount: budgets.length,
-          budgetItemsCount,
-          recurringCount: recurringItems.length,
-          goalsCount: goals.length,
-          holdingsCount: holdings.length,
-          rulesCount: rules.length,
-          categoriesCount: categories.length,
-          loansCount: loans.length,
-          vehiclesCount: (Array.isArray(data.vehicles) ? data.vehicles : []).length,
-          fuelLogsCount: (Array.isArray(data.fuelLogs) ? data.fuelLogs : []).length,
-          serviceRecordsCount: (Array.isArray(data.serviceRecords) ? data.serviceRecords : []).length,
-        },
-        data: {
-          transactions,
-          categories,
-          accounts,
-          budgets,
-          recurringItems,
-          goals,
-          holdings,
-          rules,
-          settings,
-          loans,
-          incomeStreams,
-          vehicles: Array.isArray(data.vehicles) ? data.vehicles : [],
-          fuelLogs: Array.isArray(data.fuelLogs) ? data.fuelLogs : [],
-          serviceRecords: Array.isArray(data.serviceRecords) ? data.serviceRecords : [],
-        },
-      };
-
-      const preview: RestorePreview = {
-        fileName: asset.name,
-        fileSize: asset.size,
-        exportedAt: normalizedPayload.exportedAt,
-        accountsCount: accounts.length,
-        transactionsCount: transactions.length,
-        budgetsCount: budgets.length,
-        budgetItemsCount,
-        recurringCount: recurringItems.length,
-        goalsCount: goals.length,
-        holdingsCount: holdings.length,
-        loansCount: loans.length,
-        vehiclesCount: normalizedPayload.stats.vehiclesCount,
-        fuelLogsCount: normalizedPayload.stats.fuelLogsCount,
-        serviceRecordsCount: normalizedPayload.stats.serviceRecordsCount,
-      };
-
-      return {
-        canceled: false,
-        payload: normalizedPayload,
-        preview,
-      };
     } catch (e: any) {
       console.error('Error during Google Drive document pick:', e);
       return {
@@ -241,6 +292,9 @@ export const CloudBackupService = {
         budgetsCount: payload.stats.budgetsCount,
         budgetItemsCount: payload.stats.budgetItemsCount,
         loansCount: payload.stats.loansCount,
+        vehiclesCount: payload.stats.vehiclesCount,
+        fuelLogsCount: payload.stats.fuelLogsCount,
+        serviceRecordsCount: payload.stats.serviceRecordsCount,
       };
 
       await StorageService.saveLastBackupMetadata(metadata);

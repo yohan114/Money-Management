@@ -249,6 +249,48 @@ export interface UserSettings {
   biometricLock: boolean;
 }
 
+export interface GoogleDriveUser {
+  id: string; // Google sub id
+  email: string;
+  name: string;
+  picture?: string;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt: number; // timestamp in ms
+  connectedAt: string; // ISO 8601
+}
+
+export interface GoogleDriveFile {
+  id: string;
+  name: string;
+  size?: number; // bytes
+  createdTime: string; // ISO 8601
+  modifiedTime?: string;
+  webViewLink?: string;
+}
+
+export type BackupScheduleFrequency = 'off' | 'daily' | 'weekly' | 'on_change';
+
+export interface CloudSyncSettings {
+  autoBackupFrequency: BackupScheduleFrequency;
+  lastAutoBackupDate?: string; // ISO 8601
+  customClientId?: string; // Optional user Google Cloud OAuth Client ID
+  folderId?: string;
+  folderName?: string;
+}
+
+export interface CloudSyncLog {
+  id: string;
+  timestamp: string; // ISO 8601
+  status: 'success' | 'failed';
+  trigger: 'manual' | 'scheduled' | 'auto_change';
+  recordsCount?: number;
+  fileSize?: number;
+  fileName?: string;
+  driveFileId?: string;
+  error?: string;
+}
+
 export interface CloudBackupMetadata {
   lastBackupDate: string; // ISO 8601
   fileName: string;
@@ -261,6 +303,9 @@ export interface CloudBackupMetadata {
   fuelLogsCount?: number;
   serviceRecordsCount?: number;
   totalNetWorth?: number;
+  driveFileId?: string;
+  folderId?: string;
+  isDirectSync?: boolean;
 }
 
 export interface CloudBackupPayload {

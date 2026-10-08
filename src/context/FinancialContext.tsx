@@ -19,9 +19,14 @@ import {
   Vehicle,
   FuelLog,
   ServiceRecord,
+  GoogleDriveUser,
+  GoogleDriveFile,
+  CloudSyncSettings,
+  CloudSyncLog,
 } from '../types';
-import { StorageService, DEFAULT_SETTINGS } from '../services/storage';
+import { StorageService, DEFAULT_SETTINGS, DEFAULT_CLOUD_SYNC_SETTINGS } from '../services/storage';
 import { CloudBackupService, PickBackupResult } from '../services/cloudBackup';
+import { GoogleDriveService } from '../services/googleDrive';
 
 interface CategorySpend {
   category: Category;
@@ -132,9 +137,21 @@ interface FinancialContextValue {
   getAccountById: (id: string) => Account | undefined;
   getCategorySpentForMonth: (categoryId: string, month: string) => number;
 
-  // Google Drive Cloud Backup & Restore
+  // Google Drive Cloud Backup, Sync & Schedules
   lastBackupInfo: CloudBackupMetadata | null;
-  backupToGoogleDrive: () => Promise<CloudBackupMetadata>;
+  googleUser: GoogleDriveUser | null;
+  cloudSyncSettings: CloudSyncSettings;
+  cloudSyncLogs: CloudSyncLog[];
+  driveBackups: GoogleDriveFile[];
+  isSyncingDrive: boolean;
+  connectGoogleDrive: (customClientId?: string) => Promise<{ success: boolean; error?: string }>;
+  connectWithAccessToken: (token: string) => Promise<{ success: boolean; error?: string }>;
+  disconnectGoogleDrive: () => Promise<void>;
+  updateCloudSyncSettings: (settings: Partial<CloudSyncSettings>) => Promise<void>;
+  backupToGoogleDrive: (trigger?: 'manual' | 'scheduled' | 'auto_change') => Promise<CloudBackupMetadata>;
+  refreshDriveBackups: () => Promise<GoogleDriveFile[]>;
+  restoreBackupFromDriveFile: (fileId: string) => Promise<boolean>;
+  deleteDriveBackupFile: (fileId: string) => Promise<boolean>;
   pickBackupFromDrive: () => Promise<PickBackupResult>;
   restoreFromBackupPayload: (payload: CloudBackupPayload) => Promise<boolean>;
   refreshAllData: () => Promise<void>;
@@ -206,6 +223,11 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [rules, setRules] = useState<TransactionRule[]>([]);
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [lastBackupInfo, setLastBackupInfo] = useState<CloudBackupMetadata | null>(null);
+  const [googleUser, setGoogleUser] = useState<GoogleDriveUser | null>(null);
+  const [cloudSyncSettings, setCloudSyncSettings] = useState<CloudSyncSettings>(DEFAULT_CLOUD_SYNC_SETTINGS);
+  const [cloudSyncLogs, setCloudSyncLogs] = useState<CloudSyncLog[]>([]);
+  const [driveBackups, setDriveBackups] = useState<GoogleDriveFile[]>([]);
+  const [isSyncingDrive, setIsSyncingDrive] = useState(false);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [incomeStreams, setIncomeStreams] = useState<IncomeStream[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -230,7 +252,26 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const loadAllData = useCallback(async () => {
     setLoading(true);
     await StorageService.initFreshDataIfFirstTime();
-    const [txs, cats, accs, bdgs, recs, gls, hlds, rls, sets, backupMeta, lns, strms, vehs, fuels, srvs] = await Promise.all([
+    const [
+      txs,
+      cats,
+      accs,
+      bdgs,
+      recs,
+      gls,
+      hlds,
+      rls,
+      sets,
+      backupMeta,
+      lns,
+      strms,
+      vehs,
+      fuels,
+      srvs,
+      gUser,
+      cSettings,
+      cLogs,
+    ] = await Promise.all([
       StorageService.getTransactions(),
       StorageService.getCategories(),
       StorageService.getAccounts(),
@@ -246,6 +287,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       StorageService.getVehicles(),
       StorageService.getFuelLogs(),
       StorageService.getServiceRecords(),
+      StorageService.getGoogleUser(),
+      StorageService.getCloudSyncSettings(),
+      StorageService.getCloudSyncLogs(),
     ]);
 
     setTransactions(txs);
@@ -263,7 +307,22 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setVehicles(vehs);
     setFuelLogs(fuels);
     setServiceRecords(srvs);
+    setGoogleUser(gUser);
+    setCloudSyncSettings(cSettings);
+    setCloudSyncLogs(cLogs);
     setLoading(false);
+
+    // Auto-check scheduled backup in background if Google Drive is active
+    if (gUser && gUser.accessToken) {
+      GoogleDriveService.checkAndRunScheduledBackup('scheduled').then(async (res) => {
+        if (res.ran && res.success) {
+          const updatedMeta = await StorageService.getLastBackupMetadata();
+          const updatedLogs = await StorageService.getCloudSyncLogs();
+          setLastBackupInfo(updatedMeta);
+          setCloudSyncLogs(updatedLogs);
+        }
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -841,12 +900,142 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     await loadAllData();
   }, [loadAllData]);
 
-  // Google Drive Cloud Backup Callbacks
-  const backupToGoogleDrive = useCallback(async () => {
-    const res = await CloudBackupService.exportDatabaseToDrive();
-    setLastBackupInfo(res.metadata);
-    return res.metadata;
+  // Google Drive Cloud Backup & Sync Methods
+  const connectGoogleDrive = useCallback(
+    async (customClientId?: string) => {
+      setIsSyncingDrive(true);
+      try {
+        const res = await GoogleDriveService.signInWithGoogle(customClientId);
+        if (res.success && res.user) {
+          setGoogleUser(res.user);
+          const logs = await StorageService.getCloudSyncLogs();
+          setCloudSyncLogs(logs);
+          try {
+            const files = await GoogleDriveService.listBackups(res.user.accessToken);
+            setDriveBackups(files);
+          } catch {
+            // ignore
+          }
+          return { success: true };
+        }
+        return { success: false, error: res.error || 'Sign in failed' };
+      } finally {
+        setIsSyncingDrive(false);
+      }
+    },
+    []
+  );
+
+  const connectWithAccessToken = useCallback(
+    async (token: string) => {
+      setIsSyncingDrive(true);
+      try {
+        const res = await GoogleDriveService.connectWithAccessToken(token);
+        if (res.success && res.user) {
+          setGoogleUser(res.user);
+          const logs = await StorageService.getCloudSyncLogs();
+          setCloudSyncLogs(logs);
+          try {
+            const files = await GoogleDriveService.listBackups(res.user.accessToken);
+            setDriveBackups(files);
+          } catch {
+            // ignore
+          }
+          return { success: true };
+        }
+        return { success: false, error: res.error || 'Failed to connect with token' };
+      } finally {
+        setIsSyncingDrive(false);
+      }
+    },
+    []
+  );
+
+  const disconnectGoogleDrive = useCallback(async () => {
+    await GoogleDriveService.disconnect();
+    setGoogleUser(null);
+    setDriveBackups([]);
   }, []);
+
+  const updateCloudSyncSettings = useCallback(
+    async (newSettings: Partial<CloudSyncSettings>) => {
+      const updated = await StorageService.saveCloudSyncSettings(newSettings);
+      setCloudSyncSettings(updated);
+    },
+    []
+  );
+
+  const backupToGoogleDrive = useCallback(
+    async (trigger: 'manual' | 'scheduled' | 'auto_change' = 'manual') => {
+      setIsSyncingDrive(true);
+      try {
+        const res = await CloudBackupService.backupToDrive(trigger);
+        setLastBackupInfo(res.metadata);
+        const logs = await StorageService.getCloudSyncLogs();
+        setCloudSyncLogs(logs);
+        if (googleUser && googleUser.accessToken) {
+          try {
+            const files = await GoogleDriveService.listBackups(googleUser.accessToken);
+            setDriveBackups(files);
+          } catch {
+            // ignore
+          }
+        }
+        return res.metadata;
+      } finally {
+        setIsSyncingDrive(false);
+      }
+    },
+    [googleUser]
+  );
+
+  const refreshDriveBackups = useCallback(async () => {
+    if (!googleUser || !googleUser.accessToken) return [];
+    setIsSyncingDrive(true);
+    try {
+      const files = await GoogleDriveService.listBackups(googleUser.accessToken);
+      setDriveBackups(files);
+      return files;
+    } catch (e: any) {
+      console.warn('Refresh drive backups error:', e);
+      return [];
+    } finally {
+      setIsSyncingDrive(false);
+    }
+  }, [googleUser]);
+
+  const restoreBackupFromDriveFile = useCallback(
+    async (fileId: string) => {
+      if (!googleUser || !googleUser.accessToken) return false;
+      setLoading(true);
+      try {
+        const rawPayload = await GoogleDriveService.downloadBackup(googleUser.accessToken, fileId);
+        const { payload } = CloudBackupService.normalizeBackupData(rawPayload);
+        const meta = await CloudBackupService.restoreDatabase(payload);
+        setLastBackupInfo(meta);
+        await loadAllData();
+        return true;
+      } catch (e: any) {
+        console.error('Failed to restore from Drive file:', e);
+        throw e;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [googleUser, loadAllData]
+  );
+
+  const deleteDriveBackupFile = useCallback(
+    async (fileId: string) => {
+      if (!googleUser || !googleUser.accessToken) return false;
+      const success = await GoogleDriveService.deleteBackup(googleUser.accessToken, fileId);
+      if (success) {
+        setDriveBackups((prev) => prev.filter((f) => f.id !== fileId));
+      }
+      return success;
+    },
+    [googleUser]
+  );
 
   const pickBackupFromDrive = useCallback(async () => {
     return CloudBackupService.pickBackupFromDrive();
@@ -1680,7 +1869,19 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       getAccountById,
       getCategorySpentForMonth,
       lastBackupInfo,
+      googleUser,
+      cloudSyncSettings,
+      cloudSyncLogs,
+      driveBackups,
+      isSyncingDrive,
+      connectGoogleDrive,
+      connectWithAccessToken,
+      disconnectGoogleDrive,
+      updateCloudSyncSettings,
       backupToGoogleDrive,
+      refreshDriveBackups,
+      restoreBackupFromDriveFile,
+      deleteDriveBackupFile,
       pickBackupFromDrive,
       restoreFromBackupPayload,
       refreshAllData,
@@ -1774,7 +1975,19 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       getAccountById,
       getCategorySpentForMonth,
       lastBackupInfo,
+      googleUser,
+      cloudSyncSettings,
+      cloudSyncLogs,
+      driveBackups,
+      isSyncingDrive,
+      connectGoogleDrive,
+      connectWithAccessToken,
+      disconnectGoogleDrive,
+      updateCloudSyncSettings,
       backupToGoogleDrive,
+      refreshDriveBackups,
+      restoreBackupFromDriveFile,
+      deleteDriveBackupFile,
       pickBackupFromDrive,
       restoreFromBackupPayload,
       refreshAllData,

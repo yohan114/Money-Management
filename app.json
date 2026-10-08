@@ -3,7 +3,7 @@
     "name": "Money Management",
     "slug": "money-management",
     "scheme": "moneymanagement",
-    "version": "1.7.0",
+    "version": "1.8.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.yohan114.moneymanagement",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -29,7 +29,8 @@
       "expo-status-bar",
       "expo-sharing",
       "expo-document-picker",
-      "expo-image-picker"
+      "expo-image-picker",
+      "expo-web-browser"
     ],
     "extra": {
       "router": {},

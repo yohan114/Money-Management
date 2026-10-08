@@ -59,6 +59,8 @@ export default function DashboardScreen() {
     vehicles,
     totalFuelCostThisMonth,
     upcomingServiceReminders,
+    googleUser,
+    isSyncingDrive,
   } = useFinancial();
 
   const [hideBalance, setHideBalance] = useState(false);
@@ -137,7 +139,17 @@ export default function DashboardScreen() {
               onPress={() => router.push('/modal/cloud-sync')}
               accessibilityLabel="Google Drive Cloud Sync"
             >
-              <Ionicons name="cloud-done-outline" size={20} color="#34A853" />
+              <Ionicons
+                name={
+                  isSyncingDrive
+                    ? 'sync'
+                    : googleUser
+                    ? 'cloud-done'
+                    : 'cloud-outline'
+                }
+                size={20}
+                color={googleUser ? '#34A853' : COLORS.textMuted}
+              />
             </Pressable>
 
             <Pressable

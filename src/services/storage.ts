@@ -16,6 +16,9 @@ import {
   Vehicle,
   FuelLog,
   ServiceRecord,
+  GoogleDriveUser,
+  CloudSyncSettings,
+  CloudSyncLog,
 } from '../types';
 import { DEFAULT_CATEGORIES, DEFAULT_ACCOUNTS } from '../constants/theme';
 
@@ -77,6 +80,14 @@ export const STORAGE_KEYS = {
   VEHICLES: '@money_management_vehicles_v4',
   FUEL_LOGS: '@money_management_fuel_logs_v4',
   SERVICE_RECORDS: '@money_management_service_records_v4',
+  GOOGLE_USER: '@money_management_google_user_v4',
+  CLOUD_SYNC_SETTINGS: '@money_management_cloud_sync_settings_v4',
+  CLOUD_SYNC_LOGS: '@money_management_cloud_sync_logs_v4',
+};
+
+export const DEFAULT_CLOUD_SYNC_SETTINGS: CloudSyncSettings = {
+  autoBackupFrequency: 'daily',
+  folderName: 'MoneyManagement_Backups',
 };
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -938,5 +949,61 @@ export const StorageService = {
       [STORAGE_KEYS.FUEL_LOGS, JSON.stringify([])],
       [STORAGE_KEYS.SERVICE_RECORDS, JSON.stringify([])],
     ]);
+  },
+
+  async getGoogleUser(): Promise<GoogleDriveUser | null> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.GOOGLE_USER);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async saveGoogleUser(user: GoogleDriveUser | null): Promise<void> {
+    if (user) {
+      await AsyncStorage.setItem(STORAGE_KEYS.GOOGLE_USER, JSON.stringify(user));
+    } else {
+      await AsyncStorage.removeItem(STORAGE_KEYS.GOOGLE_USER);
+    }
+  },
+
+  async getCloudSyncSettings(): Promise<CloudSyncSettings> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.CLOUD_SYNC_SETTINGS);
+      return data ? { ...DEFAULT_CLOUD_SYNC_SETTINGS, ...JSON.parse(data) } : DEFAULT_CLOUD_SYNC_SETTINGS;
+    } catch {
+      return DEFAULT_CLOUD_SYNC_SETTINGS;
+    }
+  },
+
+  async saveCloudSyncSettings(settings: Partial<CloudSyncSettings>): Promise<CloudSyncSettings> {
+    const current = await this.getCloudSyncSettings();
+    const updated = { ...current, ...settings };
+    await AsyncStorage.setItem(STORAGE_KEYS.CLOUD_SYNC_SETTINGS, JSON.stringify(updated));
+    return updated;
+  },
+
+  async getCloudSyncLogs(): Promise<CloudSyncLog[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.CLOUD_SYNC_LOGS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveCloudSyncLogs(logs: CloudSyncLog[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.CLOUD_SYNC_LOGS, JSON.stringify(logs.slice(0, 50)));
+  },
+
+  async addCloudSyncLog(log: Omit<CloudSyncLog, 'id' | 'timestamp'>): Promise<void> {
+    const logs = await this.getCloudSyncLogs();
+    const newEntry: CloudSyncLog = {
+      ...log,
+      id: `sync-log-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+    };
+    await this.saveCloudSyncLogs([newEntry, ...logs]);
   },
 };

@@ -77,6 +77,8 @@ export default function SettingsScreen() {
     vehicles,
     fuelLogs,
     serviceRecords,
+    googleUser,
+    cloudSyncSettings,
   } = useFinancial();
 
   // Modals state
@@ -244,12 +246,20 @@ export default function SettingsScreen() {
   const handleSaveToDrive = async () => {
     try {
       setCloudSaving(true);
-      const meta = await backupToGoogleDrive();
-      Alert.alert(
-        'Backup Created Successfully',
-        `Your database containing ${meta.accountsCount} accounts, ${meta.transactionsCount} transactions, and ${meta.budgetsCount} budgets is ready.\n\nOn the share menu, select 'Google Drive' ('Save to Drive') to store it securely in your personal cloud.`,
-        [{ text: 'OK' }]
-      );
+      const meta = await backupToGoogleDrive('manual');
+      if (meta.isDirectSync) {
+        Alert.alert(
+          'Google Drive Sync Successful',
+          `Directly saved to your Google Drive:\n• ${meta.fileName}\n• ${meta.accountsCount} Accounts, ${meta.transactionsCount} Transactions\n• ${meta.budgetsCount} Budgets, ${meta.vehiclesCount || 0} Vehicles\n\nFile stored in Google Drive / ${cloudSyncSettings.folderName || 'MoneyManagement_Backups'}.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Backup Created Successfully',
+          `Your database snapshot containing ${meta.accountsCount} accounts, ${meta.transactionsCount} transactions, and ${meta.budgetsCount} budgets is ready.\n\nOn the share menu, select 'Google Drive' ('Save to Drive') to store it securely in your personal cloud.`,
+          [{ text: 'OK' }]
+        );
+      }
     } catch (e: any) {
       Alert.alert('Backup Error', e?.message || 'Could not export backup to Google Drive.');
     } finally {
@@ -643,23 +653,41 @@ export default function SettingsScreen() {
                   <View
                     style={[
                       styles.cloudBadge,
-                      { backgroundColor: lastBackupInfo ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)' },
+                      {
+                        backgroundColor: googleUser
+                          ? 'rgba(52, 168, 83, 0.15)'
+                          : lastBackupInfo
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : 'rgba(245, 158, 11, 0.15)',
+                      },
                     ]}
                   >
                     <Text
                       style={[
                         styles.cloudBadgeText,
-                        { color: lastBackupInfo ? '#10B981' : '#F59E0B' },
+                        {
+                          color: googleUser
+                            ? '#34A853'
+                            : lastBackupInfo
+                            ? '#10B981'
+                            : '#F59E0B',
+                        },
                       ]}
                     >
-                      {lastBackupInfo ? 'SAVED' : 'NOT BACKED UP'}
+                      {googleUser
+                        ? 'LINKED'
+                        : lastBackupInfo
+                        ? 'SAVED'
+                        : 'NOT LINKED'}
                     </Text>
                   </View>
                 </View>
                 <Text style={styles.cloudSubtitle}>
-                  {lastBackupInfo
+                  {googleUser
+                    ? `${googleUser.email} • Auto-Sync: ${cloudSyncSettings.autoBackupFrequency.toUpperCase()}`
+                    : lastBackupInfo
                     ? `Last saved: ${new Date(lastBackupInfo.lastBackupDate).toLocaleDateString()} (${lastBackupInfo.accountsCount} acc, ${lastBackupInfo.transactionsCount} txs)`
-                    : 'Prevent data loss when reinstalling or changing phones'}
+                    : 'Connect Google Drive for automated reads, writes & backups'}
                 </Text>
               </View>
             </View>
@@ -675,24 +703,20 @@ export default function SettingsScreen() {
                 ) : (
                   <>
                     <Ionicons name="cloud-upload" size={15} color="#FFF" />
-                    <Text style={styles.cloudActionBtnText}>Save to Drive</Text>
+                    <Text style={styles.cloudActionBtnText}>
+                      {googleUser ? 'Sync to Drive' : 'Save to Drive'}
+                    </Text>
                   </>
                 )}
               </Pressable>
 
               <Pressable
                 style={[styles.cloudActionBtn, { backgroundColor: '#4285F4' }]}
-                onPress={handleRestoreFromDrive}
+                onPress={() => router.push('/modal/cloud-sync')}
                 disabled={cloudSaving || cloudRestoring}
               >
-                {cloudRestoring ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <>
-                    <Ionicons name="cloud-download" size={15} color="#FFF" />
-                    <Text style={styles.cloudActionBtnText}>Restore from Drive</Text>
-                  </>
-                )}
+                <Ionicons name="sync" size={15} color="#FFF" />
+                <Text style={styles.cloudActionBtnText}>Sync Center</Text>
               </Pressable>
             </View>
           </Card>
@@ -738,6 +762,30 @@ export default function SettingsScreen() {
                 </View>
               </View>
               <Ionicons name="download-outline" size={18} color={COLORS.info} />
+            </Pressable>
+
+            <View style={styles.menuDivider} />
+
+            <Pressable
+              style={styles.menuItem}
+              onPress={handleRestoreFromDrive}
+              disabled={cloudRestoring}
+              accessibilityRole="button"
+            >
+              <View style={styles.menuLeft}>
+                <View style={[styles.menuIconWrap, { backgroundColor: 'rgba(52, 168, 83, 0.15)' }]}>
+                  <Ionicons name="refresh-circle-outline" size={18} color="#34A853" />
+                </View>
+                <View>
+                  <Text style={styles.menuTitle}>Restore from Backup File</Text>
+                  <Text style={styles.menuSubtitle}>Pick and import a backup from Drive or storage</Text>
+                </View>
+              </View>
+              {cloudRestoring ? (
+                <ActivityIndicator size="small" color="#34A853" />
+              ) : (
+                <Ionicons name="folder-open-outline" size={18} color="#34A853" />
+              )}
             </Pressable>
           </Card>
         </View>
