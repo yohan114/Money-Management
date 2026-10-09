@@ -345,3 +345,59 @@ export interface CloudBackupPayload {
     serviceRecords?: ServiceRecord[];
   };
 }
+
+export interface AppUser {
+  uid: string; // Scoped Unique User ID (Firebase UID or Google Sub ID)
+  email: string;
+  displayName: string;
+  photoUrl?: string;
+  provider: 'google' | 'firebase';
+  accessToken?: string;
+  lastLoginAt: string; // ISO 8601
+}
+
+export type SyncState = 'idle' | 'syncing' | 'synced' | 'offline' | 'error';
+
+export interface SyncStatusInfo {
+  state: SyncState;
+  lastSyncedAt?: string; // ISO 8601
+  pendingCount: number;
+  lastError?: string;
+  targetProvider: 'firestore' | 'google_drive' | 'local_only';
+}
+
+export interface MigrationReport {
+  stage: 1 | 2 | 3 | 4; // 1: Discover, 2: Associate, 3: Upload, 4: Commit
+  discoveredRecords: {
+    accounts: number;
+    transactions: number;
+    budgets: number;
+    vehicles: number;
+    loans: number;
+    fuelLogs: number;
+  };
+  associatedUid?: string;
+  uploadedCount: number;
+  committedAt?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  error?: string;
+}
+
+export interface FirebaseProjectConfig {
+  apiKey: string;
+  authDomain?: string;
+  projectId: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
+  appId: string;
+}
+
+export interface OutboxOperation {
+  id: string;
+  uid: string;
+  timestamp: string;
+  type: 'upsert' | 'delete';
+  entity: 'transaction' | 'account' | 'budget' | 'vehicle' | 'fuel_log' | 'loan' | 'full_database';
+  entityId?: string;
+  payload?: any;
+}

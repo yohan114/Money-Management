@@ -19,6 +19,11 @@ import {
   GoogleDriveUser,
   CloudSyncSettings,
   CloudSyncLog,
+  AppUser,
+  SyncStatusInfo,
+  MigrationReport,
+  FirebaseProjectConfig,
+  OutboxOperation,
 } from '../types';
 import { DEFAULT_CATEGORIES, DEFAULT_ACCOUNTS } from '../constants/theme';
 
@@ -83,6 +88,11 @@ export const STORAGE_KEYS = {
   GOOGLE_USER: '@money_management_google_user_v4',
   CLOUD_SYNC_SETTINGS: '@money_management_cloud_sync_settings_v4',
   CLOUD_SYNC_LOGS: '@money_management_cloud_sync_logs_v4',
+  APP_USER: '@money_management_app_user_v5',
+  SYNC_STATUS: '@money_management_sync_status_v5',
+  MIGRATION_REPORT: '@money_management_migration_report_v5',
+  FIREBASE_CONFIG: '@money_management_firebase_config_v5',
+  OUTBOX_OPERATIONS: '@money_management_outbox_operations_v5',
 };
 
 export const DEFAULT_CLOUD_SYNC_SETTINGS: CloudSyncSettings = {
@@ -1005,5 +1015,97 @@ export const StorageService = {
       timestamp: new Date().toISOString(),
     };
     await this.saveCloudSyncLogs([newEntry, ...logs]);
+  },
+
+  // --- User Profile & Authentication (Plan Sec 1, 7, 8) ---
+  async getAppUser(): Promise<AppUser | null> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.APP_USER);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async saveAppUser(user: AppUser | null): Promise<void> {
+    if (user) {
+      await AsyncStorage.setItem(STORAGE_KEYS.APP_USER, JSON.stringify(user));
+    } else {
+      await AsyncStorage.removeItem(STORAGE_KEYS.APP_USER);
+    }
+  },
+
+  // --- Realtime Sync Status & Coordinator (Plan Sec 2, 11) ---
+  async getSyncStatus(): Promise<SyncStatusInfo> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.SYNC_STATUS);
+      return data
+        ? JSON.parse(data)
+        : { state: 'idle', pendingCount: 0, targetProvider: 'local_only' };
+    } catch {
+      return { state: 'idle', pendingCount: 0, targetProvider: 'local_only' };
+    }
+  },
+
+  async saveSyncStatus(status: SyncStatusInfo): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.SYNC_STATUS, JSON.stringify(status));
+  },
+
+  // --- 4-Stage Legacy Data Migration Report (Plan Sec 12) ---
+  async getMigrationReport(): Promise<MigrationReport | null> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.MIGRATION_REPORT);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async saveMigrationReport(report: MigrationReport | null): Promise<void> {
+    if (report) {
+      await AsyncStorage.setItem(STORAGE_KEYS.MIGRATION_REPORT, JSON.stringify(report));
+    } else {
+      await AsyncStorage.removeItem(STORAGE_KEYS.MIGRATION_REPORT);
+    }
+  },
+
+  // --- Firebase Project Credentials (Plan Sec 4, 5) ---
+  async getFirebaseConfig(): Promise<FirebaseProjectConfig | null> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.FIREBASE_CONFIG);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async saveFirebaseConfig(config: FirebaseProjectConfig | null): Promise<void> {
+    if (config) {
+      await AsyncStorage.setItem(STORAGE_KEYS.FIREBASE_CONFIG, JSON.stringify(config));
+    } else {
+      await AsyncStorage.removeItem(STORAGE_KEYS.FIREBASE_CONFIG);
+    }
+  },
+
+  // --- Offline Outbox Queue (Plan Sec 11) ---
+  async getOutbox(): Promise<OutboxOperation[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.OUTBOX_OPERATIONS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async addToOutbox(op: OutboxOperation): Promise<void> {
+    const list = await this.getOutbox();
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.OUTBOX_OPERATIONS,
+      JSON.stringify([...list, op].slice(-100))
+    );
+  },
+
+  async clearOutbox(): Promise<void> {
+    await AsyncStorage.removeItem(STORAGE_KEYS.OUTBOX_OPERATIONS);
   },
 };

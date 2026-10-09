@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -59,8 +60,8 @@ export default function DashboardScreen() {
     vehicles,
     totalFuelCostThisMonth,
     upcomingServiceReminders,
-    googleUser,
-    isSyncingDrive,
+    appUser,
+    syncStatus,
   } = useFinancial();
 
   const [hideBalance, setHideBalance] = useState(false);
@@ -135,21 +136,43 @@ export default function DashboardScreen() {
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Pressable
-              style={styles.headerIconBtn}
-              onPress={() => router.push('/modal/cloud-sync')}
-              accessibilityLabel="Google Drive Cloud Sync"
+              style={appUser ? styles.headerUserBtn : styles.headerSignInBtn}
+              onPress={() => router.push('/modal/login')}
+              accessibilityLabel="Google Account & Cloud Sync"
             >
-              <Ionicons
-                name={
-                  isSyncingDrive
-                    ? 'sync'
-                    : googleUser
-                    ? 'cloud-done'
-                    : 'cloud-outline'
-                }
-                size={20}
-                color={googleUser ? '#34A853' : COLORS.textMuted}
-              />
+              {appUser ? (
+                <View style={styles.headerUserWrap}>
+                  {appUser.photoUrl ? (
+                    <Image source={{ uri: appUser.photoUrl }} style={styles.headerUserImg} />
+                  ) : (
+                    <View style={styles.headerUserInitial}>
+                      <Text style={styles.headerUserInitialText}>
+                        {appUser.displayName ? appUser.displayName.charAt(0).toUpperCase() : 'U'}
+                      </Text>
+                    </View>
+                  )}
+                  <View
+                    style={[
+                      styles.headerUserDot,
+                      {
+                        backgroundColor:
+                          syncStatus.state === 'synced'
+                            ? COLORS.income
+                            : syncStatus.state === 'syncing'
+                            ? COLORS.primary
+                            : syncStatus.state === 'offline'
+                            ? COLORS.warning
+                            : COLORS.textMuted,
+                      },
+                    ]}
+                  />
+                </View>
+              ) : (
+                <View style={styles.headerSignInInner}>
+                  <Ionicons name="logo-google" size={13} color="#4285F4" />
+                  <Text style={styles.headerSignInText}>Sign In</Text>
+                </View>
+              )}
             </Pressable>
 
             <Pressable
@@ -166,7 +189,7 @@ export default function DashboardScreen() {
         {transactions.length === 0 && (
           <Pressable
             style={styles.reinstallBanner}
-            onPress={() => router.push('/modal/cloud-sync')}
+            onPress={() => router.push('/modal/login')}
             accessibilityRole="button"
           >
             <View style={styles.reinstallBannerIconWrap}>
@@ -174,10 +197,12 @@ export default function DashboardScreen() {
             </View>
             <View style={styles.reinstallBannerTextWrap}>
               <Text style={styles.reinstallBannerTitle}>
-                Reinstalled or Switched Phones?
+                {appUser ? 'Check Cloud for Existing Records' : 'Reinstalled or Switched Phones?'}
               </Text>
               <Text style={styles.reinstallBannerSubtitle}>
-                Tap here to restore your records from Google Drive in 1 tap.
+                {appUser
+                  ? 'Tap to check and restore your previous cloud database.'
+                  : 'Sign in with Google to retrieve all your records in 1 tap.'}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={COLORS.primaryLight} />
@@ -1211,5 +1236,62 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 11,
     marginTop: 2,
+  },
+  headerUserBtn: {
+    padding: 2,
+    borderRadius: 18,
+  },
+  headerUserWrap: {
+    position: 'relative',
+  },
+  headerUserImg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryLight,
+  },
+  headerUserInitial: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.primaryGlow,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerUserInitialText: {
+    color: COLORS.primaryLight,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  headerUserDot: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    borderWidth: 1.5,
+    borderColor: COLORS.background,
+  },
+  headerSignInBtn: {
+    backgroundColor: 'rgba(66, 133, 244, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(66, 133, 244, 0.3)',
+  },
+  headerSignInInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  headerSignInText: {
+    color: '#60A5FA',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

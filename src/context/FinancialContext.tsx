@@ -23,10 +23,18 @@ import {
   GoogleDriveFile,
   CloudSyncSettings,
   CloudSyncLog,
+  AppUser,
+  SyncStatusInfo,
+  MigrationReport,
+  FirebaseProjectConfig,
 } from '../types';
 import { StorageService, DEFAULT_SETTINGS, DEFAULT_CLOUD_SYNC_SETTINGS } from '../services/storage';
 import { CloudBackupService, PickBackupResult } from '../services/cloudBackup';
 import { GoogleDriveService } from '../services/googleDrive';
+import { AuthRepository } from '../services/authRepository';
+import { SyncCoordinator } from '../services/syncCoordinator';
+import { LocalDataMigrator } from '../services/localDataMigrator';
+import { FirebaseManager } from '../services/firebaseConfig';
 
 interface CategorySpend {
   category: Category;
@@ -156,6 +164,20 @@ interface FinancialContextValue {
   restoreFromBackupPayload: (payload: CloudBackupPayload) => Promise<boolean>;
   refreshAllData: () => Promise<void>;
 
+  // Google Sign-Up, Login & Automatic Cloud Sync (Plan Architecture)
+  appUser: AppUser | null;
+  syncStatus: SyncStatusInfo;
+  migrationReport: MigrationReport | null;
+  signInWithGoogle: (customClientId?: string) => Promise<{ success: boolean; user?: AppUser; error?: string }>;
+  signInWithAccessToken: (token: string) => Promise<{ success: boolean; user?: AppUser; error?: string }>;
+  signInWithDemoAccount: (email?: string, name?: string) => Promise<AppUser>;
+  signOutUser: () => Promise<void>;
+  migrateLocalData: (onProgress?: (stage: 1 | 2 | 3 | 4, msg: string) => void) => Promise<MigrationReport>;
+  syncNow: () => Promise<boolean>;
+  checkForRemoteUserCloudData: () => Promise<{ hasRemoteData: boolean; payload?: CloudBackupPayload; updatedAt?: string; source?: string }>;
+  saveFirebaseProjectConfig: (config: FirebaseProjectConfig | null) => Promise<void>;
+  getFirebaseProjectConfig: () => Promise<FirebaseProjectConfig | null>;
+
   // Phase 2: Income Ledgers & Loan Tracker
   loans: Loan[];
   incomeStreams: IncomeStream[];
@@ -233,6 +255,13 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [fuelLogs, setFuelLogs] = useState<FuelLog[]>([]);
   const [serviceRecords, setServiceRecords] = useState<ServiceRecord[]>([]);
+  const [appUser, setAppUser] = useState<AppUser | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatusInfo>({
+    state: 'idle',
+    pendingCount: 0,
+    targetProvider: 'local_only',
+  });
+  const [migrationReport, setMigrationReport] = useState<MigrationReport | null>(null);
 
   const currentYearMonth = useMemo(() => {
     const now = new Date();
@@ -271,6 +300,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       gUser,
       cSettings,
       cLogs,
+      aUser,
+      sStatus,
+      mReport,
     ] = await Promise.all([
       StorageService.getTransactions(),
       StorageService.getCategories(),
@@ -290,6 +322,9 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       StorageService.getGoogleUser(),
       StorageService.getCloudSyncSettings(),
       StorageService.getCloudSyncLogs(),
+      StorageService.getAppUser(),
+      StorageService.getSyncStatus(),
+      StorageService.getMigrationReport(),
     ]);
 
     setTransactions(txs);
@@ -310,10 +345,18 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setGoogleUser(gUser);
     setCloudSyncSettings(cSettings);
     setCloudSyncLogs(cLogs);
+    setAppUser(aUser);
+    setSyncStatus(sStatus);
+    setMigrationReport(mReport);
     setLoading(false);
 
-    // Auto-check scheduled backup in background if Google Drive is active
-    if (gUser && gUser.accessToken) {
+    // Auto-check scheduled backup or pending sync in background if user is active
+    if (aUser) {
+      SyncCoordinator.runPendingSync('startup').then(async () => {
+        const updatedStatus = await StorageService.getSyncStatus();
+        setSyncStatus(updatedStatus);
+      });
+    } else if (gUser && gUser.accessToken) {
       GoogleDriveService.checkAndRunScheduledBackup('scheduled').then(async (res) => {
         if (res.ran && res.success) {
           const updatedMeta = await StorageService.getLastBackupMetadata();
@@ -420,6 +463,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       });
       setAccounts(updatedAccounts);
       await StorageService.saveAccounts(updatedAccounts);
+      SyncCoordinator.notifyChange('transaction');
     },
     [transactions, accounts, rules]
   );
@@ -463,6 +507,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setAccounts(updatedAccounts);
         await StorageService.saveAccounts(updatedAccounts);
       }
+      SyncCoordinator.notifyChange('transaction');
     },
     [transactions, accounts]
   );
@@ -493,6 +538,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setAccounts(updatedAccounts);
         await StorageService.saveAccounts(updatedAccounts);
       }
+      SyncCoordinator.notifyChange('transaction');
     },
     [transactions, accounts]
   );
@@ -1055,6 +1101,149 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const refreshAllData = useCallback(async () => {
     await loadAllData();
   }, [loadAllData]);
+
+  // --- Google Sign-Up, Login & Automatic Cloud Sync (Plan Architecture) ---
+  const signInWithGoogle = useCallback(
+    async (customClientId?: string) => {
+      setIsSyncingDrive(true);
+      try {
+        const res = await AuthRepository.signInWithGoogle(customClientId);
+        if (res.success && res.user) {
+          setAppUser(res.user);
+          const gU = await StorageService.getGoogleUser();
+          setGoogleUser(gU);
+
+          // Check if remote cloud data exists (e.g. Device B or fresh reinstall)
+          const remoteCheck = await SyncCoordinator.checkForRemoteDataOnLogin(res.user);
+          if (remoteCheck.hasRemoteData && remoteCheck.payload) {
+            const localTxs = await StorageService.getTransactions();
+            if (localTxs.length === 0) {
+              await CloudBackupService.restoreDatabase(remoteCheck.payload);
+              await loadAllData();
+            }
+          } else {
+            // Trigger automatic migration of legacy local records if not yet migrated
+            const isMig = await LocalDataMigrator.isMigrated(res.user.uid);
+            if (!isMig) {
+              try {
+                const rep = await LocalDataMigrator.executeMigration(res.user);
+                setMigrationReport(rep);
+              } catch (migErr) {
+                console.warn('Auto-migration notice:', migErr);
+              }
+            }
+          }
+
+          const newStatus = await StorageService.getSyncStatus();
+          setSyncStatus(newStatus);
+          return { success: true, user: res.user };
+        }
+        return { success: false, error: res.error };
+      } finally {
+        setIsSyncingDrive(false);
+      }
+    },
+    [loadAllData]
+  );
+
+  const signInWithAccessToken = useCallback(
+    async (token: string) => {
+      setIsSyncingDrive(true);
+      try {
+        const res = await AuthRepository.signInWithAccessToken(token);
+        if (res.success && res.user) {
+          setAppUser(res.user);
+          const gU = await StorageService.getGoogleUser();
+          setGoogleUser(gU);
+
+          const remoteCheck = await SyncCoordinator.checkForRemoteDataOnLogin(res.user);
+          if (remoteCheck.hasRemoteData && remoteCheck.payload) {
+            const localTxs = await StorageService.getTransactions();
+            if (localTxs.length === 0) {
+              await CloudBackupService.restoreDatabase(remoteCheck.payload);
+              await loadAllData();
+            }
+          }
+
+          const newStatus = await StorageService.getSyncStatus();
+          setSyncStatus(newStatus);
+          return { success: true, user: res.user };
+        }
+        return { success: false, error: res.error };
+      } finally {
+        setIsSyncingDrive(false);
+      }
+    },
+    [loadAllData]
+  );
+
+  const signInWithDemoAccount = useCallback(async (email?: string, name?: string) => {
+    const user = await AuthRepository.signInWithDemoAccount(email, name);
+    setAppUser(user);
+    const newStatus: SyncStatusInfo = {
+      state: 'synced',
+      pendingCount: 0,
+      targetProvider: 'local_only',
+      lastSyncedAt: new Date().toISOString(),
+    };
+    await StorageService.saveSyncStatus(newStatus);
+    setSyncStatus(newStatus);
+    return user;
+  }, []);
+
+  const signOutUser = useCallback(async () => {
+    await AuthRepository.signOut();
+    setAppUser(null);
+    setGoogleUser(null);
+    const defaultStatus: SyncStatusInfo = {
+      state: 'idle',
+      pendingCount: 0,
+      targetProvider: 'local_only',
+    };
+    await StorageService.saveSyncStatus(defaultStatus);
+    setSyncStatus(defaultStatus);
+  }, []);
+
+  const migrateLocalData = useCallback(
+    async (onProgress?: (stage: 1 | 2 | 3 | 4, msg: string) => void) => {
+      if (!appUser) {
+        throw new Error('Please sign in with Google first before migrating records.');
+      }
+      const report = await LocalDataMigrator.executeMigration(appUser, onProgress);
+      setMigrationReport(report);
+      const updatedStatus = await StorageService.getSyncStatus();
+      setSyncStatus(updatedStatus);
+      return report;
+    },
+    [appUser]
+  );
+
+  const syncNow = useCallback(async () => {
+    if (!appUser) return false;
+    setIsSyncingDrive(true);
+    try {
+      const res = await SyncCoordinator.runPendingSync('manual');
+      const updatedStatus = await StorageService.getSyncStatus();
+      setSyncStatus(updatedStatus);
+      return res.success;
+    } finally {
+      setIsSyncingDrive(false);
+    }
+  }, [appUser]);
+
+  const checkForRemoteUserCloudData = useCallback(async () => {
+    if (!appUser) return { hasRemoteData: false };
+    return SyncCoordinator.checkForRemoteDataOnLogin(appUser);
+  }, [appUser]);
+
+  const saveFirebaseProjectConfig = useCallback(async (config: FirebaseProjectConfig | null) => {
+    await StorageService.saveFirebaseConfig(config);
+    FirebaseManager.reset();
+  }, []);
+
+  const getFirebaseProjectConfig = useCallback(async () => {
+    return StorageService.getFirebaseConfig();
+  }, []);
 
   // Phase 2: Income Ledgers & Loan Actions
   const totalBorrowedDebt = useMemo(() => {
@@ -1885,6 +2074,18 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       pickBackupFromDrive,
       restoreFromBackupPayload,
       refreshAllData,
+      appUser,
+      syncStatus,
+      migrationReport,
+      signInWithGoogle,
+      signInWithAccessToken,
+      signInWithDemoAccount,
+      signOutUser,
+      migrateLocalData,
+      syncNow,
+      checkForRemoteUserCloudData,
+      saveFirebaseProjectConfig,
+      getFirebaseProjectConfig,
       loans,
       incomeStreams,
       totalBorrowedDebt,
@@ -1991,6 +2192,18 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       pickBackupFromDrive,
       restoreFromBackupPayload,
       refreshAllData,
+      appUser,
+      syncStatus,
+      migrationReport,
+      signInWithGoogle,
+      signInWithAccessToken,
+      signInWithDemoAccount,
+      signOutUser,
+      migrateLocalData,
+      syncNow,
+      checkForRemoteUserCloudData,
+      saveFirebaseProjectConfig,
+      getFirebaseProjectConfig,
       loans,
       incomeStreams,
       totalBorrowedDebt,

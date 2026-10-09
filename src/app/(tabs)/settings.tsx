@@ -10,6 +10,7 @@ import {
   TextInput,
   Switch,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -68,8 +69,6 @@ export default function SettingsScreen() {
     transactions,
     budgets,
     recurringItems,
-    lastBackupInfo,
-    backupToGoogleDrive,
     pickBackupFromDrive,
     restoreFromBackupPayload,
     loans,
@@ -77,15 +76,15 @@ export default function SettingsScreen() {
     vehicles,
     fuelLogs,
     serviceRecords,
-    googleUser,
-    cloudSyncSettings,
+    appUser,
+    syncStatus,
+    syncNow,
   } = useFinancial();
 
   // Modals state
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [currencySearchQuery, setCurrencySearchQuery] = useState('');
   const [exporting, setExporting] = useState(false);
-  const [cloudSaving, setCloudSaving] = useState(false);
   const [cloudRestoring, setCloudRestoring] = useState(false);
 
   // Rule Modal State
@@ -243,30 +242,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleSaveToDrive = async () => {
-    try {
-      setCloudSaving(true);
-      const meta = await backupToGoogleDrive('manual');
-      if (meta.isDirectSync) {
-        Alert.alert(
-          'Google Drive Sync Successful',
-          `Directly saved to your Google Drive:\n• ${meta.fileName}\n• ${meta.accountsCount} Accounts, ${meta.transactionsCount} Transactions\n• ${meta.budgetsCount} Budgets, ${meta.vehiclesCount || 0} Vehicles\n\nFile stored in Google Drive / ${cloudSyncSettings.folderName || 'MoneyManagement_Backups'}.`,
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'Backup Created Successfully',
-          `Your database snapshot containing ${meta.accountsCount} accounts, ${meta.transactionsCount} transactions, and ${meta.budgetsCount} budgets is ready.\n\nOn the share menu, select 'Google Drive' ('Save to Drive') to store it securely in your personal cloud.`,
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (e: any) {
-      Alert.alert('Backup Error', e?.message || 'Could not export backup to Google Drive.');
-    } finally {
-      setCloudSaving(false);
-    }
-  };
-
   const handleRestoreFromDrive = async () => {
     try {
       setCloudRestoring(true);
@@ -344,6 +319,70 @@ export default function SettingsScreen() {
           <Text style={styles.title}>Accounts & Settings</Text>
           <Text style={styles.subtitle}>Monarch wealth preferences & automation</Text>
         </View>
+
+        {/* User Account / Google Sign-In Card (Plan Section 1, 7, 8) */}
+        <Pressable
+          style={styles.accountProfileCard}
+          onPress={() => router.push('/modal/login')}
+          accessibilityRole="button"
+          accessibilityLabel="Google Account Profile and Cloud Sync"
+        >
+          <View style={styles.accountProfileRow}>
+            {appUser?.photoUrl ? (
+              <Image source={{ uri: appUser.photoUrl }} style={styles.accountAvatarImg} />
+            ) : (
+              <View style={styles.accountAvatarBox}>
+                <Ionicons
+                  name={appUser ? 'person' : 'logo-google'}
+                  size={18}
+                  color={appUser ? COLORS.primaryLight : '#4285F4'}
+                />
+              </View>
+            )}
+
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.accountProfileName} numberOfLines={1}>
+                  {appUser ? appUser.displayName : 'Google Cloud Account'}
+                </Text>
+                <View
+                  style={[
+                    styles.syncPill,
+                    {
+                      backgroundColor:
+                        syncStatus.state === 'synced'
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : syncStatus.state === 'syncing'
+                          ? 'rgba(59, 130, 246, 0.15)'
+                          : 'rgba(245, 158, 11, 0.15)',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.syncPillText,
+                      {
+                        color:
+                          syncStatus.state === 'synced'
+                            ? COLORS.income
+                            : syncStatus.state === 'syncing'
+                            ? COLORS.primaryLight
+                            : COLORS.warning,
+                      },
+                    ]}
+                  >
+                    {appUser ? syncStatus.state.toUpperCase() : 'NOT SIGNED IN'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.accountProfileEmail} numberOfLines={1}>
+                {appUser ? appUser.email : 'Sign in to auto-sync & recover data after reinstall'}
+              </Text>
+            </View>
+
+            <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
+          </View>
+        </Pressable>
 
         {/* Accounts / Wallets Section */}
         <View style={styles.section}>
@@ -645,19 +684,23 @@ export default function SettingsScreen() {
           <Card style={styles.cloudCard}>
             <View style={styles.cloudHeader}>
               <View style={styles.cloudIconBox}>
-                <Ionicons name="cloud-done" size={22} color="#34A853" />
+                <Ionicons
+                  name={appUser ? 'cloud-done' : 'cloud-offline'}
+                  size={22}
+                  color={appUser ? '#34A853' : '#F59E0B'}
+                />
               </View>
               <View style={styles.cloudInfo}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.cloudTitle}>Google Drive Cloud</Text>
+                  <Text style={styles.cloudTitle}>
+                    {appUser ? 'Google Cloud Sync' : 'Google Cloud Account'}
+                  </Text>
                   <View
                     style={[
                       styles.cloudBadge,
                       {
-                        backgroundColor: googleUser
+                        backgroundColor: appUser
                           ? 'rgba(52, 168, 83, 0.15)'
-                          : lastBackupInfo
-                          ? 'rgba(16, 185, 129, 0.15)'
                           : 'rgba(245, 158, 11, 0.15)',
                       },
                     ]}
@@ -666,58 +709,64 @@ export default function SettingsScreen() {
                       style={[
                         styles.cloudBadgeText,
                         {
-                          color: googleUser
-                            ? '#34A853'
-                            : lastBackupInfo
-                            ? '#10B981'
-                            : '#F59E0B',
+                          color: appUser ? '#34A853' : '#F59E0B',
                         },
                       ]}
                     >
-                      {googleUser
-                        ? 'LINKED'
-                        : lastBackupInfo
-                        ? 'SAVED'
-                        : 'NOT LINKED'}
+                      {appUser ? syncStatus.state.toUpperCase() : 'GUEST'}
                     </Text>
                   </View>
                 </View>
                 <Text style={styles.cloudSubtitle}>
-                  {googleUser
-                    ? `${googleUser.email} • Auto-Sync: ${cloudSyncSettings.autoBackupFrequency.toUpperCase()}`
-                    : lastBackupInfo
-                    ? `Last saved: ${new Date(lastBackupInfo.lastBackupDate).toLocaleDateString()} (${lastBackupInfo.accountsCount} acc, ${lastBackupInfo.transactionsCount} txs)`
-                    : 'Connect Google Drive for automated reads, writes & backups'}
+                  {appUser
+                    ? `${appUser.email} • Auto-sync is ACTIVE`
+                    : 'Connect Google account to enable auto-sync & recover records on new devices'}
                 </Text>
               </View>
             </View>
 
             <View style={styles.cloudBtnRow}>
-              <Pressable
-                style={[styles.cloudActionBtn, { backgroundColor: '#34A853' }]}
-                onPress={handleSaveToDrive}
-                disabled={cloudSaving || cloudRestoring}
-              >
-                {cloudSaving ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <>
-                    <Ionicons name="cloud-upload" size={15} color="#FFF" />
-                    <Text style={styles.cloudActionBtnText}>
-                      {googleUser ? 'Sync to Drive' : 'Save to Drive'}
-                    </Text>
-                  </>
-                )}
-              </Pressable>
+              {appUser ? (
+                <>
+                  <Pressable
+                    style={[styles.cloudActionBtn, { backgroundColor: '#34A853' }]}
+                    onPress={async () => {
+                      const ok = await syncNow();
+                      if (ok) {
+                        Alert.alert('Synced!', 'Your local database was synchronized with cloud storage.');
+                      } else {
+                        Alert.alert('Sync Notice', syncStatus.lastError || 'Could not complete cloud sync.');
+                      }
+                    }}
+                    disabled={syncStatus.state === 'syncing'}
+                  >
+                    {syncStatus.state === 'syncing' ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="cloud-upload" size={15} color="#FFF" />
+                        <Text style={styles.cloudActionBtnText}>Sync Now</Text>
+                      </>
+                    )}
+                  </Pressable>
 
-              <Pressable
-                style={[styles.cloudActionBtn, { backgroundColor: '#4285F4' }]}
-                onPress={() => router.push('/modal/cloud-sync')}
-                disabled={cloudSaving || cloudRestoring}
-              >
-                <Ionicons name="sync" size={15} color="#FFF" />
-                <Text style={styles.cloudActionBtnText}>Sync Center</Text>
-              </Pressable>
+                  <Pressable
+                    style={[styles.cloudActionBtn, { backgroundColor: '#4285F4' }]}
+                    onPress={() => router.push('/modal/login')}
+                  >
+                    <Ionicons name="person-circle-outline" size={15} color="#FFF" />
+                    <Text style={styles.cloudActionBtnText}>Account</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <Pressable
+                  style={[styles.cloudActionBtn, { backgroundColor: '#4285F4', flex: 1 }]}
+                  onPress={() => router.push('/modal/login')}
+                >
+                  <Ionicons name="logo-google" size={15} color="#FFF" />
+                  <Text style={styles.cloudActionBtnText}>Sign In with Google</Text>
+                </Pressable>
+              )}
             </View>
           </Card>
         </View>
@@ -1702,5 +1751,55 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  accountProfileCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.lg,
+    padding: 14,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.borderHighlight,
+  },
+  accountProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  accountAvatarImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryLight,
+  },
+  accountAvatarBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(66, 133, 244, 0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(66, 133, 244, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accountProfileName: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  accountProfileEmail: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  syncPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.xs,
+  },
+  syncPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

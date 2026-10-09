@@ -136,6 +136,14 @@ function AppContent() {
           }}
         />
         <Stack.Screen
+          name="modal/login"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
           name="modal/loan"
           options={{
             presentation: 'modal',

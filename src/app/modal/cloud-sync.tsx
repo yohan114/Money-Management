@@ -376,6 +376,25 @@ export default function CloudSyncScreen() {
                 )}
               </Pressable>
 
+              <Pressable
+                style={[
+                  styles.smallBtn,
+                  {
+                    marginTop: 8,
+                    width: '100%',
+                    justifyContent: 'center',
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    borderColor: 'rgba(59, 130, 246, 0.4)',
+                  },
+                ]}
+                onPress={() => router.push('/modal/login')}
+              >
+                <Ionicons name="person-circle-outline" size={16} color={COLORS.primaryLight} />
+                <Text style={[styles.smallBtnText, { color: COLORS.primaryLight, fontSize: 12 }]}>
+                  Google Account Login & Multi-Device Sync
+                </Text>
+              </Pressable>
+
               {/* Advanced Token / Client ID Toggle */}
               <Pressable
                 style={styles.advancedToggleBtn}
