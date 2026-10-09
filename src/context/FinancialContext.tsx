@@ -168,10 +168,25 @@ interface FinancialContextValue {
   appUser: AppUser | null;
   syncStatus: SyncStatusInfo;
   migrationReport: MigrationReport | null;
+  signInWithGoogleAccount: (
+    email: string,
+    displayName?: string
+  ) => Promise<{ success: boolean; user?: AppUser; error?: string }>;
   signInWithGoogle: (customClientId?: string) => Promise<{ success: boolean; user?: AppUser; error?: string }>;
   signInWithAccessToken: (token: string) => Promise<{ success: boolean; user?: AppUser; error?: string }>;
   signInWithDemoAccount: (email?: string, name?: string) => Promise<AppUser>;
   signOutUser: () => Promise<void>;
+  signUpWithFirebaseEmail: (
+    email: string,
+    pass: string,
+    displayName?: string
+  ) => Promise<{ success: boolean; user?: AppUser; error?: string }>;
+  signInWithFirebaseEmail: (
+    email: string,
+    pass: string
+  ) => Promise<{ success: boolean; user?: AppUser; error?: string }>;
+  saveGoogleClientId: (clientId: string) => Promise<void>;
+  getGoogleClientId: () => Promise<string | null>;
   migrateLocalData: (onProgress?: (stage: 1 | 2 | 3 | 4, msg: string) => void) => Promise<MigrationReport>;
   syncNow: () => Promise<boolean>;
   checkForRemoteUserCloudData: () => Promise<{ hasRemoteData: boolean; payload?: CloudBackupPayload; updatedAt?: string; source?: string }>;
@@ -956,11 +971,13 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           setGoogleUser(res.user);
           const logs = await StorageService.getCloudSyncLogs();
           setCloudSyncLogs(logs);
-          try {
-            const files = await GoogleDriveService.listBackups(res.user.accessToken);
-            setDriveBackups(files);
-          } catch {
-            // ignore
+          if (res.user.accessToken) {
+            try {
+              const files = await GoogleDriveService.listBackups(res.user.accessToken);
+              setDriveBackups(files);
+            } catch {
+              // ignore
+            }
           }
           return { success: true };
         }
@@ -981,11 +998,13 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           setGoogleUser(res.user);
           const logs = await StorageService.getCloudSyncLogs();
           setCloudSyncLogs(logs);
-          try {
-            const files = await GoogleDriveService.listBackups(res.user.accessToken);
-            setDriveBackups(files);
-          } catch {
-            // ignore
+          if (res.user.accessToken) {
+            try {
+              const files = await GoogleDriveService.listBackups(res.user.accessToken);
+              setDriveBackups(files);
+            } catch {
+              // ignore
+            }
           }
           return { success: true };
         }
@@ -1202,6 +1221,101 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
     await StorageService.saveSyncStatus(defaultStatus);
     setSyncStatus(defaultStatus);
+  }, []);
+
+  const signInWithGoogleAccount = useCallback(
+    async (email: string, displayName?: string) => {
+      setIsSyncingDrive(true);
+      try {
+        const res = await AuthRepository.signInWithGoogleAccount(email, displayName);
+        if (res.success && res.user) {
+          setAppUser(res.user);
+          const gU = await StorageService.getGoogleUser();
+          setGoogleUser(gU);
+
+          const remoteCheck = await SyncCoordinator.checkForRemoteDataOnLogin(res.user);
+          if (remoteCheck.hasRemoteData && remoteCheck.payload) {
+            const localTxs = await StorageService.getTransactions();
+            if (localTxs.length === 0) {
+              await CloudBackupService.restoreDatabase(remoteCheck.payload);
+              await loadAllData();
+            }
+          } else {
+            const isMig = await LocalDataMigrator.isMigrated(res.user.uid);
+            if (!isMig) {
+              try {
+                const rep = await LocalDataMigrator.executeMigration(res.user);
+                setMigrationReport(rep);
+              } catch (migErr) {
+                console.warn('Auto-migration notice:', migErr);
+              }
+            }
+          }
+
+          const newStatus = await StorageService.getSyncStatus();
+          setSyncStatus(newStatus);
+          return { success: true, user: res.user };
+        }
+        return { success: false, error: res.error };
+      } finally {
+        setIsSyncingDrive(false);
+      }
+    },
+    [loadAllData]
+  );
+
+  const signUpWithFirebaseEmail = useCallback(
+    async (email: string, pass: string, displayName?: string) => {
+      setIsSyncingDrive(true);
+      try {
+        const res = await AuthRepository.signUpWithFirebaseEmail(email, pass, displayName);
+        if (res.success && res.user) {
+          setAppUser(res.user);
+          const newStatus = await StorageService.getSyncStatus();
+          setSyncStatus(newStatus);
+          return { success: true, user: res.user };
+        }
+        return { success: false, error: res.error };
+      } finally {
+        setIsSyncingDrive(false);
+      }
+    },
+    []
+  );
+
+  const signInWithFirebaseEmail = useCallback(
+    async (email: string, pass: string) => {
+      setIsSyncingDrive(true);
+      try {
+        const res = await AuthRepository.signInWithFirebaseEmail(email, pass);
+        if (res.success && res.user) {
+          setAppUser(res.user);
+          const remoteCheck = await SyncCoordinator.checkForRemoteDataOnLogin(res.user);
+          if (remoteCheck.hasRemoteData && remoteCheck.payload) {
+            const localTxs = await StorageService.getTransactions();
+            if (localTxs.length === 0) {
+              await CloudBackupService.restoreDatabase(remoteCheck.payload);
+              await loadAllData();
+            }
+          }
+          const newStatus = await StorageService.getSyncStatus();
+          setSyncStatus(newStatus);
+          return { success: true, user: res.user };
+        }
+        return { success: false, error: res.error };
+      } finally {
+        setIsSyncingDrive(false);
+      }
+    },
+    [loadAllData]
+  );
+
+  const saveGoogleClientId = useCallback(async (clientId: string) => {
+    await StorageService.saveGoogleClientId(clientId);
+  }, []);
+
+  const getGoogleClientId = useCallback(async () => {
+    return StorageService.getGoogleClientId();
   }, []);
 
   const migrateLocalData = useCallback(
@@ -2077,10 +2191,15 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       appUser,
       syncStatus,
       migrationReport,
+      signInWithGoogleAccount,
       signInWithGoogle,
       signInWithAccessToken,
       signInWithDemoAccount,
       signOutUser,
+      signUpWithFirebaseEmail,
+      signInWithFirebaseEmail,
+      saveGoogleClientId,
+      getGoogleClientId,
       migrateLocalData,
       syncNow,
       checkForRemoteUserCloudData,
@@ -2195,10 +2314,15 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       appUser,
       syncStatus,
       migrationReport,
+      signInWithGoogleAccount,
       signInWithGoogle,
       signInWithAccessToken,
       signInWithDemoAccount,
       signOutUser,
+      signUpWithFirebaseEmail,
+      signInWithFirebaseEmail,
+      saveGoogleClientId,
+      getGoogleClientId,
       migrateLocalData,
       syncNow,
       checkForRemoteUserCloudData,

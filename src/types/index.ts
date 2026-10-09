@@ -254,9 +254,9 @@ export interface GoogleDriveUser {
   email: string;
   name: string;
   picture?: string;
-  accessToken: string;
+  accessToken?: string;
   refreshToken?: string;
-  expiresAt: number; // timestamp in ms
+  expiresAt?: number; // timestamp in ms
   connectedAt: string; // ISO 8601
 }
 

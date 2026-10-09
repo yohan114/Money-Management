@@ -93,6 +93,7 @@ export const STORAGE_KEYS = {
   MIGRATION_REPORT: '@money_management_migration_report_v5',
   FIREBASE_CONFIG: '@money_management_firebase_config_v5',
   OUTBOX_OPERATIONS: '@money_management_outbox_operations_v5',
+  GOOGLE_CLIENT_ID: '@money_management_google_client_id_v5',
 };
 
 export const DEFAULT_CLOUD_SYNC_SETTINGS: CloudSyncSettings = {
@@ -1107,5 +1108,22 @@ export const StorageService = {
 
   async clearOutbox(): Promise<void> {
     await AsyncStorage.removeItem(STORAGE_KEYS.OUTBOX_OPERATIONS);
+  },
+
+  // --- Google OAuth Client ID ---
+  async getGoogleClientId(): Promise<string | null> {
+    try {
+      return await AsyncStorage.getItem(STORAGE_KEYS.GOOGLE_CLIENT_ID);
+    } catch {
+      return null;
+    }
+  },
+
+  async saveGoogleClientId(clientId: string | null): Promise<void> {
+    if (clientId && clientId.trim()) {
+      await AsyncStorage.setItem(STORAGE_KEYS.GOOGLE_CLIENT_ID, clientId.trim());
+    } else {
+      await AsyncStorage.removeItem(STORAGE_KEYS.GOOGLE_CLIENT_ID);
+    }
   },
 };

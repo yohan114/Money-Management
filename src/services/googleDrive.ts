@@ -36,7 +36,22 @@ export const GoogleDriveService = {
     error?: string;
   }> {
     try {
-      const clientId = customClientId || DEFAULT_GOOGLE_CLIENT_ID;
+      const savedClientId = await StorageService.getGoogleClientId();
+      const clientId =
+        (customClientId && customClientId.trim()) ||
+        savedClientId ||
+        DEFAULT_GOOGLE_CLIENT_ID;
+
+      if (
+        !clientId ||
+        clientId.includes('moneymanagement.apps.googleusercontent.com')
+      ) {
+        return {
+          success: false,
+          error: 'OAUTH_CLIENT_ID_REQUIRED',
+        };
+      }
+
       const redirectUri = this.getRedirectUri();
 
       const authUrl =
@@ -75,6 +90,9 @@ export const GoogleDriveService = {
         };
 
         await StorageService.saveGoogleUser(googleUser);
+        if (customClientId && customClientId.trim()) {
+          await StorageService.saveGoogleClientId(customClientId.trim());
+        }
 
         // Ensure backup folder exists in user's Drive
         await this.getOrCreateBackupFolder(accessToken);

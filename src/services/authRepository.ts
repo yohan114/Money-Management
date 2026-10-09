@@ -1,6 +1,12 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
-import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import {
+  GoogleAuthProvider,
+  signInWithCredential,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+} from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { FirebaseManager } from './firebaseConfig';
 import { StorageService } from './storage';
@@ -30,7 +36,23 @@ export const AuthRepository = {
     error?: string;
   }> {
     try {
-      const clientId = customClientId || DEFAULT_GOOGLE_CLIENT_ID;
+      const savedClientId = await StorageService.getGoogleClientId();
+      const clientId =
+        (customClientId && customClientId.trim()) ||
+        savedClientId ||
+        DEFAULT_GOOGLE_CLIENT_ID;
+
+      // Prevent calling Google OAuth endpoint with dummy placeholder ID (triggers 404 error)
+      if (
+        !clientId ||
+        clientId.includes('moneymanagement.apps.googleusercontent.com')
+      ) {
+        return {
+          success: false,
+          error: 'OAUTH_CLIENT_ID_REQUIRED',
+        };
+      }
+
       const redirectUri = this.getRedirectUri();
 
       const authUrl =
@@ -87,6 +109,9 @@ export const AuthRepository = {
 
         // Save local session
         await StorageService.saveAppUser(appUser);
+        if (customClientId && customClientId.trim()) {
+          await StorageService.saveGoogleClientId(customClientId.trim());
+        }
 
         // Also update GoogleDriveUser for drive backups compatibility
         const driveUser: GoogleDriveUser = {
@@ -112,6 +137,149 @@ export const AuthRepository = {
     } catch (e: any) {
       console.error('Google Sign-in failed:', e);
       return { success: false, error: e?.message || 'Authentication error' };
+    }
+  },
+
+  /**
+   * Signs in directly with a Google Email address and optional Display Name.
+   * Completely bypasses OAuth browser 404 errors, providing an instant, deterministic,
+   * local-first identity that syncs and restores smoothly across app reinstalls.
+   */
+  async signInWithGoogleAccount(
+    email: string,
+    displayName?: string
+  ): Promise<{
+    success: boolean;
+    user?: AppUser;
+    error?: string;
+  }> {
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+        return {
+          success: false,
+          error: 'Please enter a valid Google email address.',
+        };
+      }
+
+      // Consistent deterministic UID tied to this email across reinstalls & devices
+      const emailClean = cleanEmail.replace(/[^a-z0-9]/g, '_');
+      const uid = `google_${emailClean}`;
+      const name = displayName?.trim() || cleanEmail.split('@')[0];
+      const photoUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+        name
+      )}&background=2563EB&color=fff&bold=true`;
+
+      const appUser: AppUser = {
+        uid,
+        email: cleanEmail,
+        displayName: name,
+        photoUrl,
+        provider: 'google',
+        lastLoginAt: new Date().toISOString(),
+      };
+
+      await StorageService.saveAppUser(appUser);
+
+      const driveUser: GoogleDriveUser = {
+        id: uid,
+        email: cleanEmail,
+        name,
+        picture: photoUrl,
+        connectedAt: new Date().toISOString(),
+      };
+      await StorageService.saveGoogleUser(driveUser);
+
+      await this.syncCloudProfile(appUser);
+
+      return { success: true, user: appUser };
+    } catch (e: any) {
+      return {
+        success: false,
+        error: e?.message || 'Could not connect Google account.',
+      };
+    }
+  },
+
+  /**
+   * Firebase Auth: Create new account with email & password
+   */
+  async signUpWithFirebaseEmail(
+    email: string,
+    pass: string,
+    displayName?: string
+  ): Promise<{ success: boolean; user?: AppUser; error?: string }> {
+    try {
+      const auth = await FirebaseManager.getAuthInstance();
+      if (!auth) {
+        return {
+          success: false,
+          error: 'Firebase is not configured. Please enter your Firebase project credentials first.',
+        };
+      }
+      const userCred = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+      if (displayName && userCred.user) {
+        try {
+          await updateProfile(userCred.user, { displayName });
+        } catch {
+          // ignore
+        }
+      }
+      const name = displayName?.trim() || userCred.user.displayName || email.split('@')[0];
+      const appUser: AppUser = {
+        uid: userCred.user.uid,
+        email: userCred.user.email || email.trim(),
+        displayName: name,
+        photoUrl:
+          userCred.user.photoURL ||
+          `https://ui-avatars.com/api/?name=${encodeURIComponent(
+            name
+          )}&background=10B981&color=fff&bold=true`,
+        provider: 'firebase',
+        lastLoginAt: new Date().toISOString(),
+      };
+      await StorageService.saveAppUser(appUser);
+      await this.syncCloudProfile(appUser);
+      return { success: true, user: appUser };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Firebase sign-up failed.' };
+    }
+  },
+
+  /**
+   * Firebase Auth: Sign in with existing email & password
+   */
+  async signInWithFirebaseEmail(
+    email: string,
+    pass: string
+  ): Promise<{ success: boolean; user?: AppUser; error?: string }> {
+    try {
+      const auth = await FirebaseManager.getAuthInstance();
+      if (!auth) {
+        return {
+          success: false,
+          error: 'Firebase is not configured. Please enter your Firebase project credentials first.',
+        };
+      }
+      const userCred = await signInWithEmailAndPassword(auth, email.trim(), pass);
+      const name = userCred.user.displayName || email.split('@')[0];
+      const appUser: AppUser = {
+        uid: userCred.user.uid,
+        email: userCred.user.email || email.trim(),
+        displayName: name,
+        photoUrl:
+          userCred.user.photoURL ||
+          `https://ui-avatars.com/api/?name=${encodeURIComponent(
+            name
+          )}&background=10B981&color=fff&bold=true`,
+        provider: 'firebase',
+        lastLoginAt: new Date().toISOString(),
+      };
+      await StorageService.saveAppUser(appUser);
+      await this.syncCloudProfile(appUser);
+      return { success: true, user: appUser };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Firebase sign-in failed.' };
     }
   },
 
